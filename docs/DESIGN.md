@@ -216,6 +216,7 @@ Re-planned on 17 Nov 2026 when the owner chose the Google Sheet as the store.
 | Apps Script quotas | One person's bank mail is far below Gmail read limits |
 | The sheet holds transactions and unparsed email text in plain form | It is the owner's own Google account, which already holds the same emails. Encryption is planned (M8) |
 | The web app answers anyone who has the URL and code | 64-character random code, constant-time check, never in the repo or the sheet; Disconnect removes it from a device; a new code can be made in Script properties |
+| **Jhapi and Bhag share the browser origin `dasabhijit.github.io`** (GitHub Pages serves both from one host). Their saved keys do not collide (`jhapi.*`), but the browser lets pages on one origin read each other's storage, so Bhag's code could read Jhapi's saved secret code | Open, owner to decide. Options: a custom domain for Jhapi (e.g. `jhapi.<your-domain>`, still on GitHub Pages), or hosting Jhapi under a separate GitHub account or organisation. Both give Jhapi its own origin |
 | A device clock far behind Google's | Its edits look older than the sheet's rows and lose. Phones set their clocks from the network, so this is rare; the app says when an edit was not saved |
 | Script and app disagree about an email | The script runs the app's own bundled parsers; CI fails if `Code.gs` is stale |
 
