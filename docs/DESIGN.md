@@ -80,9 +80,14 @@ Jhapi PWA (GitHub Pages) on iPhone / iPad / Mac
 
 ### 3.3 Duplicates, transfers and categories
 
-- **Receipts:** PhonePe, YONO, the second DBS email and ICICI standing-instruction notes repeat a bank alert. They are kept as **Receipt** rows (hidden unless "Show receipts" is on) and never counted. They carry the bank's reference number, so a later version can merge their better merchant names into the bank's row.
-- **Transfers:** card bill payments and transfers between the owner's own accounts get the category **Transfer**, which is left out of spending. Investments and refunds are also left out of the month's spending.
-- **Categories:** seed rules in `src/core/records.ts` (Swiggy → Food, BESCOM → Bills, and so on). The owner can change any category in the app or the sheet.
+- **Receipts:** PhonePe, YONO, the second DBS email and ICICI standing-instruction notes repeat a bank alert. They are kept as **Receipt** rows (hidden unless "Show receipts" is on) and never counted. When a receipt and the bank's row share the bank reference and amount, the bank's row takes the receipt's payee (if it had none) and its category (if it only had Other or Income), e.g. a PhonePe BSNL bill turns the Axis UPI row into **Bills** (`enrichFromReceipts`).
+- **Transfers between the owner's own accounts** (`pairTransfers`): after each email run, the script looks back 45 days for a debit and a credit of the same amount in two different accounts, at most a day apart (three for card bills), where
+  - the debit went to a UPI handle at the credited account's bank (`asha@axisbank` → Axis), or
+  - both sides name the same person (SBI "Transferred to X" / "Deposit by transfer from X"), or
+  - the credit is a card bill payment and the debit looks like one (CRED, BillDesk, "credit card").
+
+  Both get the category **Transfer** and a note ("To Axis Bank ••1111"). Each row pairs at most once. Card payments, iMobile card payments and transfers the bank labels as such are Transfer from the start. Transfer, Investments and Refund are left out of the month's spending.
+- **Categories:** the owner's own **rules** come first (the `Rules` tab: "payee contains X → category"). The app's "Always use <category> for <payee>" adds one and recategorises earlier rows from that payee. Then seed rules in `src/core/records.ts` (Swiggy → Food, BESCOM → Bills, and so on). Any category can be changed in the app or the sheet.
 
 ## 4. Security and privacy
 
@@ -117,6 +122,8 @@ Amounts are **rupees** in the sheet and integer **paise** in the app. Dates are 
 **Statements:** `ID`, `Account`, `Total due`, `Minimum due`, `Due date`, `Email ID`, `Updated`.
 
 **Review:** `ID`, `Received`, `From`, `Subject`, `Status` (Not parsed, Blocked), `Reason`, `Text`, `Email ID`, `Updated`, `Resolved`.
+
+**Rules:** `ID`, `Contains`, `Category`, `Updated`, `Deleted`. Synced both ways like transactions; rows typed by hand get an ID.
 
 **Log:** `Time`, `Event` (the last 500 lines).
 
@@ -178,7 +185,7 @@ Re-planned on 17 Nov 2026 when the owner chose the Google Sheet as the store.
 | M1 ✅ | `src/core`: money, FY, all calculators in section 7 (1–5, 7), with tests | Tests match hand-checked figures: ₹43,391 EMI on ₹50L at 8.5% for 20 years, NSC ₹1,000 → ₹1,449, PPF 5th-of-month rule, EPF month-end rule, ₹25L at 6% for 10 years → ₹44.77L |
 | M4a ✅ | Parsers for Axis, ICICI, SBI, DBS, PhonePe and Amazon Pay; allow-list; synthetic tests and local real-sample tests | All 57 real samples give the expected result |
 | M4b ✅ | Jhapi's own Apps Script (email reader with DKIM check, web app, onEdit), sheet layout, app sync (pull on open, push on edit, offline queue), Home, Transactions, Needs review, Add/edit, Settings | Script tests on fake Google pass, the app ↔ script round-trip test passes, deployed |
-| M4c | Live on the owner's sheet: first real run, then fix whatever real mail shows. Merge receipts into bank rows; spot transfers between own accounts; owner's own category rules | A week of real mail reads with nothing missed |
+| M4c | ✅ Owner's category rules (Rules tab, "Always use…"), transfer pairing between own accounts, receipts improving bank rows. Still to do: live on the owner's sheet, a week of real mail | A week of real mail reads with nothing missed |
 | M5 | Portfolio: holdings tab in the sheet, Add entry, EPF/PPF/FD/loan detail using the M1 calculators, prices, net worth snapshots, Dashboard | Dashboard matches the sum of the owner's accounts |
 | M6 | Goals, goal tagging, forecast worker | Goal detail matches the design |
 | M7 | AI Outlook and Gemini fallback for unparsed emails | Outlook screens work with a real key |
@@ -195,6 +202,7 @@ Re-planned on 17 Nov 2026 when the owner chose the Google Sheet as the store.
 | Apps Script quotas | One person's bank mail is far below Gmail read limits |
 | The sheet holds transactions and unparsed email text in plain form | It is the owner's own Google account, which already holds the same emails. Encryption is planned (M8) |
 | The web app answers anyone who has the URL and code | 64-character random code, constant-time check, never in the repo or the sheet; Disconnect removes it from a device; a new code can be made in Script properties |
+| A device clock far behind Google's | Its edits look older than the sheet's rows and lose. Phones set their clocks from the network, so this is rare; the app says when an edit was not saved |
 | Script and app disagree about an email | The script runs the app's own bundled parsers; CI fails if `Code.gs` is stale |
 
 ## 12. Open questions

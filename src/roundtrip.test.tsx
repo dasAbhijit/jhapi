@@ -6,10 +6,10 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { makeEnv, passAuth } from './cloud/fakeGoogle'
-import { TXN_HEADERS, TXN_TAB } from './core/sheetRows'
+import { RULES_TAB, TXN_HEADERS, TXN_TAB } from './core/sheetRows'
 import { LocalStore, memoryKV } from './data/localStore'
 import type { Transport } from './data/sheetClient'
 import { StoreProvider } from './data/store'
@@ -47,7 +47,16 @@ function setup() {
   return { env, token, local, calls: () => calls }
 }
 
-afterEach(cleanup)
+// The app's clock is pinned just after the fake Google clock (17 Nov 2026, 10:00 UTC), so app edits
+// are newer than the rows the script wrote, and "this month" does not depend on when the tests run.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-11-17T12:00:00Z'))
+})
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
 
 describe('app and sheet round trip', () => {
   it('connects, shows email transactions, and saves a hand-added one to the sheet', async () => {
@@ -111,5 +120,29 @@ describe('app and sheet round trip', () => {
     await user.click(screen.getByRole('button', { name: 'Sync now' }))
     await user.click(screen.getByRole('link', { name: 'Transactions' }))
     expect(await screen.findByText('Newspaper')).toBeInTheDocument()
+  })
+
+  it('"Always use this category" saves a rule to the sheet and recategorises the payee', async () => {
+    const user = userEvent.setup()
+    const { env, token } = setup()
+    await user.type(screen.getByLabelText('Web app URL'), URL)
+    await user.type(screen.getByLabelText('Secret code'), token)
+    await user.click(screen.getByRole('button', { name: 'Connect' }))
+    await screen.findByText('Transactions in the sheet')
+
+    await user.click(screen.getByRole('link', { name: 'Transactions' }))
+    await user.click(await screen.findByText('SWIGGY'))
+    await user.selectOptions(screen.getByLabelText('Category'), 'Entertainment')
+    await user.click(screen.getByLabelText(/Always use Entertainment for “SWIGGY”/))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      const rules = env.tab(RULES_TAB).slice(1)
+      expect(rules).toHaveLength(1)
+      expect(rules[0].slice(1, 3)).toEqual(['SWIGGY', 'Entertainment'])
+      expect(env.tab(TXN_TAB)[1][TXN_HEADERS.indexOf('Category')]).toBe('Entertainment')
+    })
+    await user.click(screen.getByRole('link', { name: 'Settings' }))
+    expect(await screen.findByText(/“SWIGGY” →/)).toBeInTheDocument()
   })
 })

@@ -8,7 +8,7 @@
  */
 import { formatDate, parseDate } from './dates'
 import { looseDate } from './parsers/text'
-import type { ReviewItem, Statement, Txn, TxnSource, TxnStatus } from './records'
+import type { ReviewItem, Rule, Statement, Txn, TxnSource, TxnStatus } from './records'
 
 export type Cell = string | number | boolean | null
 
@@ -16,6 +16,7 @@ export const TXN_TAB = 'Transactions'
 export const REVIEW_TAB = 'Review'
 export const STATEMENT_TAB = 'Statements'
 export const LOG_TAB = 'Log'
+export const RULES_TAB = 'Rules'
 
 export const TXN_HEADERS = [
   'ID', 'Date', 'Time', 'Account', 'Type', 'Amount', 'Counterparty', 'Category', 'Channel', 'Reference',
@@ -23,12 +24,14 @@ export const TXN_HEADERS = [
 ] as const
 export const REVIEW_HEADERS = ['ID', 'Received', 'From', 'Subject', 'Status', 'Reason', 'Text', 'Email ID', 'Updated', 'Resolved'] as const
 export const STATEMENT_HEADERS = ['ID', 'Account', 'Total due', 'Minimum due', 'Due date', 'Email ID', 'Updated'] as const
+export const RULES_HEADERS = ['ID', 'Contains', 'Category', 'Updated', 'Deleted'] as const
 
 /** Columns that must stay plain text in the sheet, so Sheets does not turn them into dates or numbers. */
 export const TEXT_COLUMNS: Record<string, readonly string[]> = {
   [TXN_TAB]: ['ID', 'Date', 'Time', 'Account', 'Reference', 'Email ID', 'Updated'],
   [REVIEW_TAB]: ['ID', 'Received', 'Email ID', 'Updated'],
   [STATEMENT_TAB]: ['ID', 'Account', 'Due date', 'Email ID', 'Updated'],
+  [RULES_TAB]: ['ID', 'Contains', 'Updated'],
 }
 
 const STATUS_WORDS: Record<TxnStatus, string> = { verified: 'Verified', manual: 'Manual', receipt: 'Receipt', review: 'Review', ignored: 'Ignored' }
@@ -152,4 +155,16 @@ export function rowToStatement(row: (Cell | Date)[], headers: string[]): Stateme
     emailId: str(get('Email ID')),
     updatedAt: str(get('Updated')),
   }
+}
+
+export function ruleToRow(r: Rule): Cell[] {
+  return [r.id, r.contains, r.category, r.updatedAt, r.deleted ? 'TRUE' : '']
+}
+
+export function rowToRule(row: Cell[], headers: string[]): Rule | null {
+  const get = (h: string) => row[headers.indexOf(h)] as Cell
+  const contains = str(get('Contains'))
+  const category = str(get('Category'))
+  if (!contains || !category) return null
+  return { id: str(get('ID')), contains, category, updatedAt: str(get('Updated')), deleted: bool(get('Deleted')) }
 }

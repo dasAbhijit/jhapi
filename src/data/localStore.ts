@@ -5,7 +5,7 @@
  * Kept in localStorage for now. Encryption on the device comes later (DESIGN.md, section 4).
  * Every access is wrapped: Safari private browsing and cleared site data must not crash the app.
  */
-import type { ReviewItem, Statement, Txn } from '../core/records'
+import type { ReviewItem, Rule, Statement, Txn } from '../core/records'
 import type { SheetConfig } from './sheetClient'
 
 export interface Snapshot {
@@ -15,12 +15,14 @@ export interface Snapshot {
   transactions: Txn[]
   statements: Statement[]
   review: ReviewItem[]
+  rules: Rule[]
   problems: string[]
 }
 
 export interface Pending {
   transactions: Txn[]
   review: Pick<ReviewItem, 'id' | 'resolved' | 'updatedAt'>[]
+  rules: Rule[]
 }
 
 export interface KV {
@@ -87,7 +89,7 @@ export class LocalStore {
 
   snapshot(): Snapshot | null {
     const s = read<Snapshot>(this.kv, KEYS.snapshot)
-    return s && Array.isArray(s.transactions) ? s : null
+    return s && Array.isArray(s.transactions) ? { ...s, rules: s.rules ?? [] } : null
   }
   setSnapshot(s: Snapshot | null) {
     if (s) this.kv.set(KEYS.snapshot, JSON.stringify(s))
@@ -96,10 +98,10 @@ export class LocalStore {
 
   pending(): Pending {
     const p = read<Pending>(this.kv, KEYS.pending)
-    return { transactions: p?.transactions ?? [], review: p?.review ?? [] }
+    return { transactions: p?.transactions ?? [], review: p?.review ?? [], rules: p?.rules ?? [] }
   }
   setPending(p: Pending) {
-    if (p.transactions.length === 0 && p.review.length === 0) this.kv.remove(KEYS.pending)
+    if (p.transactions.length === 0 && p.review.length === 0 && p.rules.length === 0) this.kv.remove(KEYS.pending)
     else this.kv.set(KEYS.pending, JSON.stringify(p))
   }
 
@@ -119,6 +121,10 @@ export function queueTxn(p: Pending, t: Txn): Pending {
   return { ...p, transactions: [...p.transactions.filter((x) => x.id !== t.id), t] }
 }
 
+export function queueRule(p: Pending, r: Rule): Pending {
+  return { ...p, rules: [...p.rules.filter((x) => x.id !== r.id), r] }
+}
+
 export function queueReview(p: Pending, r: Pick<ReviewItem, 'id' | 'resolved' | 'updatedAt'>): Pending {
   return { ...p, review: [...p.review.filter((x) => x.id !== r.id), r] }
 }
@@ -127,8 +133,10 @@ export function queueReview(p: Pending, r: Pick<ReviewItem, 'id' | 'resolved' | 
 export function withPending(s: Snapshot, p: Pending): Snapshot {
   const ids = new Set(p.transactions.map((t) => t.id))
   const resolved = new Map(p.review.map((r) => [r.id, r.resolved]))
+  const ruleIds = new Set(p.rules.map((r) => r.id))
   return {
     ...s,
+    rules: [...s.rules.filter((r) => !ruleIds.has(r.id)), ...p.rules],
     transactions: [...s.transactions.filter((t) => !ids.has(t.id)), ...p.transactions],
     review: s.review.map((r) => (resolved.has(r.id) ? { ...r, resolved: resolved.get(r.id)! } : r)),
   }

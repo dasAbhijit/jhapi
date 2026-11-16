@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { checkSender } from '../core/dkim'
-import { REVIEW_TAB, STATEMENT_TAB, TXN_HEADERS, TXN_TAB } from '../core/sheetRows'
+import { REVIEW_TAB, RULES_TAB, STATEMENT_TAB, TXN_HEADERS, TXN_TAB } from '../core/sheetRows'
 import { makeEnv, passAuth, type FakeMessage } from './fakeGoogle'
 
 const col = (h: string) => (TXN_HEADERS as readonly string[]).indexOf(h)
@@ -30,7 +30,7 @@ describe('setup', () => {
   it('creates the tabs, a long secret code and one 10-minute trigger', () => {
     const { env, token } = ready()
     expect(token).toMatch(/^[0-9a-f]{64}$/)
-    expect(Object.keys(env.sheets).sort()).toEqual(['Log', 'Review', 'Statements', 'Transactions'])
+    expect(Object.keys(env.sheets).sort()).toEqual(['Log', 'Review', 'Rules', 'Statements', 'Transactions'])
     expect(env.tab(TXN_TAB)[0]).toEqual([...TXN_HEADERS])
     expect(env.sheets[TXN_TAB].frozen).toBe(1)
     env.fn('setup')()
@@ -216,5 +216,40 @@ describe('DKIM check', () => {
   it('reads folded header lines', () => {
     const folded = 'Authentication-Results: mx.google.com;\r\n       dkim=pass header.i=@axis.bank.in header.s=s1;\r\n       spf=pass\r\nFrom: alerts@axis.bank.in\r\n\r\nx'
     expect(checkSender(folded, 'alerts@axis.bank.in', 'axis.bank.in').ok).toBe(true)
+  })
+})
+
+describe('rules and tidying after an email run', () => {
+  it('applies the owner\'s rules to new emails, and rules sync both ways', () => {
+    const { env, token } = ready()
+    env.sheets[RULES_TAB].grid.push(['', 'swiggy', 'Eating out', '', ''])
+    env.messages.push(axisUpi('m1', '250.00', '600000000001'))
+    env.fn('readInbox')()
+    expect(env.tab(TXN_TAB)[1][col('Category')]).toBe('Eating out')
+    const pulled = env.call({ token, action: 'pull' })
+    expect(pulled.rules).toHaveLength(1)
+    expect(pulled.rules[0]).toMatchObject({ contains: 'swiggy', category: 'Eating out', deleted: false })
+    const r = env.call({ token, action: 'push', rules: [{ id: 'r2', contains: 'BESCOM', category: 'Bills', updatedAt: '2026-11-17T10:00:00.000Z', deleted: false }] })
+    expect(r.rules.map((x: { contains: string }) => x.contains).sort()).toEqual(['BESCOM', 'swiggy'])
+    expect(env.call({ token, action: 'push', rules: [{ id: 'r3', contains: '', category: 'X', updatedAt: '2026-11-17T10:00:00.000Z', deleted: false }] }).error).toMatch(/Rule 1/)
+  })
+
+  it('tags a transfer between two of the owner\'s accounts after the run', () => {
+    const { env } = ready()
+    env.messages.push(
+      {
+        id: 'd1', from: 'digibankalerts@dbs.com', subject: 'digibank alert – Funds transfer successful via UPI', date: '2026-11-16T10:56:00Z', auth: passAuth('dbs.com'),
+        body: 'Your funds transfer request for INR 14000.00 on 16-Nov-2026 16:26 from your VPA asha@dbs linked to Account Number XXXXXXXX6666 to Payee VPA asha@axisbank has been completed via UPI (Ref No 600000000020) and the funds',
+      },
+      {
+        id: 'a1', from: 'alerts@axis.bank.in', subject: 'INR 14,000.00 was credited to your A/c.', date: '2026-11-16T10:56:30Z', auth: passAuth('axis.bank.in'),
+        body: 'Amount Credited: INR 14,000.00 Account Number: XX1111 Date & Time: 16-11-26, 16:26:30 IST Transaction Info: UPI/P2A/600000000020/ASHA RAO/DBSS/x Feel free to connect',
+      },
+    )
+    env.fn('readInbox')()
+    const rows = env.tab(TXN_TAB).slice(1)
+    expect(rows.map((r) => r[col('Category')])).toEqual(['Transfer', 'Transfer'])
+    expect(rows.find((r) => r[col('Email ID')] === 'd1')![col('Note')]).toBe('To Axis Bank ••1111')
+    expect(env.tab('Log').some((x) => /tagged as transfers/.test(String(x[1])))).toBe(true)
   })
 })

@@ -5,8 +5,8 @@
  */
 export { parseEmail, findSender, SENDERS } from '../core/parsers/index'
 export { checkSender } from '../core/dkim'
-export { txnFromParsed, statementFromParsed, isDuplicate, mergeById, accountLabel } from '../core/records'
+export { txnFromParsed, statementFromParsed, isDuplicate, mergeById, accountLabel, ruleCategory, pairTransfers, enrichFromReceipts } from '../core/records'
 export {
-  TXN_TAB, REVIEW_TAB, STATEMENT_TAB, LOG_TAB, TXN_HEADERS, REVIEW_HEADERS, STATEMENT_HEADERS, TEXT_COLUMNS,
-  txnToRow, rowToTxn, reviewToRow, rowToReview, statementToRow, rowToStatement,
+  TXN_TAB, REVIEW_TAB, STATEMENT_TAB, LOG_TAB, RULES_TAB, TXN_HEADERS, REVIEW_HEADERS, STATEMENT_HEADERS, RULES_HEADERS, TEXT_COLUMNS,
+  txnToRow, rowToTxn, reviewToRow, rowToReview, statementToRow, rowToStatement, ruleToRow, rowToRule,
 } from '../core/sheetRows'

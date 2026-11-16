@@ -8,8 +8,8 @@
  * - If the same row was changed in the sheet after the app's edit, the sheet wins.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { Txn } from '../core/records'
-import { LocalStore, queueReview, queueTxn, withPending, type Pending, type Snapshot } from './localStore'
+import type { Rule, Txn } from '../core/records'
+import { LocalStore, queueReview, queueRule, queueTxn, withPending, type Pending, type Snapshot } from './localStore'
 import { SheetClient, SheetError, validateUrl, type PullResult, type SheetConfig, type Transport } from './sheetClient'
 import { Ctx, type Store } from './storeContext'
 
@@ -23,6 +23,7 @@ function toSnapshot(r: PullResult): Snapshot {
     transactions: r.transactions,
     statements: r.statements,
     review: r.review,
+    rules: r.rules ?? [],
     problems: r.problems,
   }
 }
@@ -52,6 +53,7 @@ export function StoreProvider({ children, local = new LocalStore(), transport }:
         const left: Pending = {
           transactions: now.transactions.filter((t) => !sent.transactions.some((s) => s.id === t.id && s.updatedAt === t.updatedAt)),
           review: now.review.filter((x) => !sent.review.some((s) => s.id === x.id && s.updatedAt === x.updatedAt)),
+          rules: now.rules.filter((x) => !sent.rules.some((s) => s.id === x.id && s.updatedAt === x.updatedAt)),
         }
         local.setPending(left)
         setPending(left)
@@ -77,7 +79,7 @@ export function StoreProvider({ children, local = new LocalStore(), transport }:
       do {
         again.current = false
         const sent = local.pending()
-        const hasChanges = sent.transactions.length > 0 || sent.review.length > 0
+        const hasChanges = sent.transactions.length > 0 || sent.review.length > 0 || sent.rules.length > 0
         const r = hasChanges ? await client.push(sent, local.deviceName()) : await client.pull()
         apply(r, hasChanges ? sent : null)
       } while (again.current)
@@ -139,10 +141,10 @@ export function StoreProvider({ children, local = new LocalStore(), transport }:
   const disconnect = useCallback(() => {
     local.setConfig(null)
     local.setSnapshot(null)
-    local.setPending({ transactions: [], review: [] })
+    local.setPending({ transactions: [], review: [], rules: [] })
     setConfig(null)
     setSnapshot(null)
-    setPending({ transactions: [], review: [] })
+    setPending({ transactions: [], review: [], rules: [] })
     setError(null)
   }, [local])
 
@@ -155,6 +157,25 @@ export function StoreProvider({ children, local = new LocalStore(), transport }:
       void sync()
     },
     [local, sync],
+  )
+
+  const saveRule = useCallback(
+    (r: Rule, apply = false) => {
+      const now = new Date().toISOString()
+      let p = queueRule(local.pending(), { ...r, updatedAt: now })
+      if (apply && !r.deleted && snapshot) {
+        const needle = r.contains.trim().toLowerCase()
+        const view = withPending(snapshot, p)
+        for (const t of view.transactions) {
+          if (t.deleted || t.category === r.category || t.category === 'Transfer') continue
+          if (t.counterparty.toLowerCase().includes(needle)) p = queueTxn(p, { ...t, category: r.category, updatedAt: now })
+        }
+      }
+      local.setPending(p)
+      setPending(p)
+      void sync()
+    },
+    [local, snapshot, sync],
   )
 
   const resolveReview = useCallback(
@@ -170,9 +191,10 @@ export function StoreProvider({ children, local = new LocalStore(), transport }:
   const data = useMemo(() => (snapshot ? withPending(snapshot, pending) : null), [snapshot, pending])
 
   const value: Store = {
+    saveRule,
     config,
     data,
-    pendingCount: pending.transactions.length + pending.review.length,
+    pendingCount: pending.transactions.length + pending.review.length + pending.rules.length,
     syncing,
     readingInbox,
     error,

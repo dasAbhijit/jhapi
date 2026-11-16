@@ -66,9 +66,10 @@ Every requirement starts as **Planned**. The milestone column refers to the buil
 | D1 | The owner sees all transactions newest first, grouped by day, with search, and a Needs review list with a count | M4b | Auto (round trip); Open for a hand check on iPhone and iPad |
 | D2 | The owner can add, edit, recategorise, mark as not counted, or delete a transaction | M4b | Auto (add); Open for edit and delete by hand |
 | D3 | Receipts (PhonePe, YONO and similar copies) are kept but never counted, and hidden unless asked for | M4b | Auto |
-| D4 | Card bill payments and transfers between own accounts are left out of spending | M4b | Built (category Transfer); pairing of both sides is M4c |
+| D4 | Card bill payments and transfers between own accounts are left out of spending | M4c | Auto (pairing by UPI handle, same person, card bill; no false pairs for strangers, other amounts, far dates) |
 | D5 | Home shows this month's spending and money received, spending by category, card bills due, accounts with the latest known balance, and recent transactions | M4b | Auto (spending total in the round trip); Open for a hand check |
-| D6 | The owner can set their own category rules | M4c | Planned |
+| D6 | The owner can set their own category rules, applied to new emails, and recategorise past rows from the same payee | M4c | Auto (script applies rules; round trip saves a rule and recategorises) |
+| D7 | A receipt that repeats a bank alert improves the bank's row (payee, category) | M4c | Auto |
 
 ### E. Portfolio
 

@@ -4,7 +4,8 @@ import { useStore } from '../data/storeContext'
 const GUIDE = 'https://github.com/dasAbhijit/jhapi/blob/main/docs/admin/setup.md'
 
 export default function Settings() {
-  const { config, connect, disconnect, data, sync, syncing, readInbox, readingInbox, error } = useStore()
+  const { config, connect, disconnect, data, sync, syncing, readInbox, readingInbox, error, saveRule } = useStore()
+  const rules = (data?.rules ?? []).filter((r) => !r.deleted)
   const [url, setUrl] = useState('')
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
@@ -81,6 +82,24 @@ export default function Settings() {
           </form>
         )}
       </section>
+      {config && (
+        <section className="card stack">
+          <h2>Category rules</h2>
+          <p className="muted">New bank emails whose payee contains the text get the category. Add one from any transaction (“Always use…”), or in the sheet's Rules tab.</p>
+          {rules.length === 0 ? (
+            <p className="muted">No rules yet.</p>
+          ) : (
+            <ul className="plain">
+              {rules.map((r) => (
+                <li key={r.id} className="kv">
+                  <span>“{r.contains}” → <strong>{r.category}</strong></span>
+                  <button type="button" className="link-btn" aria-label={`Remove rule for ${r.contains}`} onClick={() => saveRule({ ...r, deleted: true })}>Remove</button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
       <section className="card stack">
         <h2>Privacy</h2>
         <p className="muted">

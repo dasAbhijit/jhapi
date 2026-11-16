@@ -27,6 +27,8 @@ var JhapiCore = (() => {
     LOG_TAB: () => LOG_TAB,
     REVIEW_HEADERS: () => REVIEW_HEADERS,
     REVIEW_TAB: () => REVIEW_TAB,
+    RULES_HEADERS: () => RULES_HEADERS,
+    RULES_TAB: () => RULES_TAB,
     SENDERS: () => SENDERS,
     STATEMENT_HEADERS: () => STATEMENT_HEADERS,
     STATEMENT_TAB: () => STATEMENT_TAB,
@@ -35,14 +37,19 @@ var JhapiCore = (() => {
     TXN_TAB: () => TXN_TAB,
     accountLabel: () => accountLabel,
     checkSender: () => checkSender,
+    enrichFromReceipts: () => enrichFromReceipts,
     findSender: () => findSender,
     isDuplicate: () => isDuplicate,
     mergeById: () => mergeById,
+    pairTransfers: () => pairTransfers,
     parseEmail: () => parseEmail,
     reviewToRow: () => reviewToRow,
     rowToReview: () => rowToReview,
+    rowToRule: () => rowToRule,
     rowToStatement: () => rowToStatement,
     rowToTxn: () => rowToTxn,
+    ruleCategory: () => ruleCategory,
+    ruleToRow: () => ruleToRow,
     statementFromParsed: () => statementFromParsed,
     statementToRow: () => statementToRow,
     txnFromParsed: () => txnFromParsed,
@@ -743,7 +750,7 @@ var JhapiCore = (() => {
     [/amazon|flipkart|myntra|ajio|nykaa|meesho|store|mart|retail/i, "Shopping"],
     [/bigbasket|blinkit|zepto|instamart|grocer|dmart|supermarket/i, "Groceries"],
     [/uber|ola|rapido|metro|irctc|railway|indigo|air ?india|vistara|travel|toll|fastag|petrol|fuel|hpcl|bpcl|iocl/i, "Transport"],
-    [/electric|bescom|cesc|wbsedcl|power|water|gas|bsnl|jio|airtel|vodafone|vi |broadband|mobile|dth|utility/i, "Bills"],
+    [/electric|bescom|cesc|wbsedcl|power|water|gas|bsnl|jio|airtel|vodafone|vi |broadband|mobile|dth|utility|recharge|postpaid|prepaid/i, "Bills"],
     [/insurance|lic\b|max life|hdfc life|icici pru|star health/i, "Insurance"],
     [/zerodha|groww|clearing corp|mutual fund|\bmf\b|sip|coin|kfin|cams|nps|ppf/i, "Investments"],
     [/hospital|pharma|medic|apollo|clinic|health|lab/i, "Health"],
@@ -798,6 +805,9 @@ var JhapiCore = (() => {
       updatedAt: ids.now
     };
   }
+  function counts(t) {
+    return !t.deleted && (t.status === "verified" || t.status === "manual");
+  }
   function isDuplicate(incoming, existing) {
     if (!incoming.reference) return false;
     return existing.some(
@@ -814,12 +824,75 @@ var JhapiCore = (() => {
     }
     return { merged: [...byId.values()], rejected };
   }
+  function ruleCategory(counterparty, rules) {
+    const name = counterparty.toLowerCase();
+    if (!name) return null;
+    const hit = rules.find((r) => !r.deleted && r.contains.trim() && name.includes(r.contains.trim().toLowerCase()));
+    return hit ? hit.category : null;
+  }
+  var UPI_HANDLES = [
+    [/@(axisbank|axl|okaxis|axisb)$/i, "axis"],
+    [/@(icici|okicici|ibl|ikwik)$/i, "icici"],
+    [/@(sbi|oksbi|yonosbi)$/i, "sbi"],
+    [/@(dbs)$/i, "dbs"]
+  ];
+  var institutionOf = (account) => account.split("-")[0];
+  function personName(s) {
+    return s.toLowerCase().replace(/transferred to|deposit by transfer from|transfer (to|from)|\b(mr|ms|mrs|dr)\.?\s/g, " ").replace(/[^a-z ]/g, " ").replace(/\s+/g, "");
+  }
+  function daysApart(a, b) {
+    return Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 864e5;
+  }
+  var CARD_BILL = /\bcred\b|credit card|card bill|billdesk|bbps|ccpay/i;
+  function pairTransfers(txns) {
+    const live = txns.filter((t) => counts(t) && t.account && t.category !== "Transfer");
+    const debits = live.filter((t) => t.direction === "debit");
+    const credits = live.filter((t) => t.direction === "credit");
+    const used = /* @__PURE__ */ new Set();
+    const out = [];
+    for (const c of credits) {
+      for (const d of debits) {
+        if (used.has(d.id) || used.has(c.id) || d.account === c.account || d.amountPaise !== c.amountPaise) continue;
+        const gap = daysApart(d.date, c.date);
+        const handle = UPI_HANDLES.find(([re]) => re.test(d.counterparty.trim()));
+        const byHandle = gap <= 1 && !!handle && handle[1] === institutionOf(c.account);
+        const pd = personName(d.counterparty);
+        const byName = gap <= 1 && pd.length >= 4 && pd === personName(c.counterparty);
+        const byCard = gap <= 3 && c.channel === "card_payment" && CARD_BILL.test(`${d.counterparty} ${d.note}`);
+        if (!byHandle && !byName && !byCard) continue;
+        used.add(d.id);
+        used.add(c.id);
+        out.push({ id: d.id, category: "Transfer", note: joinNote(d.note, `To ${accountLabel(c.account)}`) });
+        out.push({ id: c.id, category: "Transfer", note: joinNote(c.note, `From ${accountLabel(d.account)}`) });
+        break;
+      }
+    }
+    return out;
+  }
+  function joinNote(note, add) {
+    return note.includes(add) ? note : note ? `${note}; ${add}` : add;
+  }
+  function enrichFromReceipts(txns) {
+    const receipts = txns.filter((t) => t.status === "receipt" && !t.deleted && t.reference);
+    const out = [];
+    for (const p of txns) {
+      if (!counts(p) || !p.reference || p.source !== "email") continue;
+      const r = receipts.find((x) => x.reference === p.reference && x.amountPaise === p.amountPaise);
+      if (!r) continue;
+      const u = { id: p.id };
+      if (!p.counterparty && r.counterparty) u.counterparty = r.counterparty;
+      if ((p.category === "Other" || p.category === "Income") && r.category !== "Other" && r.category !== p.category) u.category = r.category;
+      if (u.counterparty || u.category) out.push(u);
+    }
+    return out;
+  }
 
   // src/core/sheetRows.ts
   var TXN_TAB = "Transactions";
   var REVIEW_TAB = "Review";
   var STATEMENT_TAB = "Statements";
   var LOG_TAB = "Log";
+  var RULES_TAB = "Rules";
   var TXN_HEADERS = [
     "ID",
     "Date",
@@ -842,10 +915,12 @@ var JhapiCore = (() => {
   ];
   var REVIEW_HEADERS = ["ID", "Received", "From", "Subject", "Status", "Reason", "Text", "Email ID", "Updated", "Resolved"];
   var STATEMENT_HEADERS = ["ID", "Account", "Total due", "Minimum due", "Due date", "Email ID", "Updated"];
+  var RULES_HEADERS = ["ID", "Contains", "Category", "Updated", "Deleted"];
   var TEXT_COLUMNS = {
     [TXN_TAB]: ["ID", "Date", "Time", "Account", "Reference", "Email ID", "Updated"],
     [REVIEW_TAB]: ["ID", "Received", "Email ID", "Updated"],
-    [STATEMENT_TAB]: ["ID", "Account", "Due date", "Email ID", "Updated"]
+    [STATEMENT_TAB]: ["ID", "Account", "Due date", "Email ID", "Updated"],
+    [RULES_TAB]: ["ID", "Contains", "Updated"]
   };
   var STATUS_WORDS = { verified: "Verified", manual: "Manual", receipt: "Receipt", review: "Review", ignored: "Ignored" };
   var SOURCE_WORDS = { email: "Email", app: "App", sheet: "Sheet" };
@@ -968,6 +1043,16 @@ var JhapiCore = (() => {
       updatedAt: str(get("Updated"))
     };
   }
+  function ruleToRow(r) {
+    return [r.id, r.contains, r.category, r.updatedAt, r.deleted ? "TRUE" : ""];
+  }
+  function rowToRule(row, headers) {
+    const get = (h) => row[headers.indexOf(h)];
+    const contains = str(get("Contains"));
+    const category = str(get("Category"));
+    if (!contains || !category) return null;
+    return { id: str(get("ID")), contains, category, updatedAt: str(get("Updated")), deleted: bool(get("Deleted")) };
+  }
   return __toCommonJS(entry_exports);
 })();
 
@@ -999,11 +1084,13 @@ var MAX_BODY_CHARS = 5 * 1024 * 1024;
 var MAX_RECORDS_PER_PUSH = 5000;
 var MAX_REVIEW_TEXT = 4000;
 var MAX_LOG_ROWS = 500;
+var TIDY_DAYS = 45; // how far back transfer pairing and receipt matching look after each email run
 
 var TABS = [
   { name: J.TXN_TAB, headers: J.TXN_HEADERS },
   { name: J.STATEMENT_TAB, headers: J.STATEMENT_HEADERS },
   { name: J.REVIEW_TAB, headers: J.REVIEW_HEADERS },
+  { name: J.RULES_TAB, headers: J.RULES_HEADERS },
   { name: J.LOG_TAB, headers: ['Time', 'Event'] },
 ];
 
@@ -1220,6 +1307,22 @@ function loadStatements_() {
   return out;
 }
 
+/** The owner's category rules. Rows typed by hand get an ID and an Updated time. */
+function loadRules_() {
+  var tab = readTab_(J.RULES_TAB);
+  var items = [];
+  tab.rows.forEach(function (row, i) {
+    var r = J.rowToRule(row, tab.headers);
+    if (!r) return;
+    var fix = false;
+    if (!r.id) { r.id = Utilities.getUuid(); fix = true; }
+    if (!r.updatedAt) { r.updatedAt = nowIso_(); fix = true; }
+    if (fix) writeRows_(tab.sheet, J.RULES_TAB, tab.headers, i + 2, [J.ruleToRow(r)]);
+    items.push({ rule: r, row: i + 2 });
+  });
+  return { tab: tab, items: items };
+}
+
 function pull_() {
   var t = loadTxns_();
   var props = PropertiesService.getScriptProperties();
@@ -1230,6 +1333,7 @@ function pull_() {
     transactions: t.items.map(function (x) { return x.txn; }),
     statements: loadStatements_(),
     review: loadReview_().items.map(function (x) { return x.item; }),
+    rules: loadRules_().items.map(function (x) { return x.rule; }),
     problems: t.problems,
   };
 }
@@ -1243,8 +1347,16 @@ var ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 function validatePush_(body) {
   var txns = body.transactions || [];
   var review = body.review || [];
-  if (!Array.isArray(txns) || !Array.isArray(review)) throw new Error('Bad request.');
-  if (txns.length + review.length > MAX_RECORDS_PER_PUSH) throw new Error('Too many changes in one request.');
+  var rules = body.rules || [];
+  if (!Array.isArray(txns) || !Array.isArray(review) || !Array.isArray(rules)) throw new Error('Bad request.');
+  if (txns.length + review.length + rules.length > MAX_RECORDS_PER_PUSH) throw new Error('Too many changes in one request.');
+  rules.forEach(function (r, i) {
+    var ok = r && typeof r.id === 'string' && r.id && r.id.length <= 100 &&
+      typeof r.contains === 'string' && r.contains.trim() && r.contains.length <= 200 &&
+      typeof r.category === 'string' && r.category.trim() && r.category.length <= 60 &&
+      typeof r.deleted === 'boolean' && ISO_TIME.test(String(r.updatedAt));
+    if (!ok) throw new Error('Rule ' + (i + 1) + ': bad record.');
+  });
   txns.forEach(function (t, i) {
     var where = 'Transaction ' + (i + 1) + ': ';
     if (!t || typeof t !== 'object') throw new Error(where + 'not a record.');
@@ -1310,6 +1422,21 @@ function push_(body) {
     });
   });
 
+  var ruleState = loadRules_();
+  var rulesById = {};
+  ruleState.items.forEach(function (x) { rulesById[x.rule.id] = x; });
+  var newRules = [];
+  (body.rules || []).forEach(function (r) {
+    var rec = { id: r.id, contains: r.contains.trim(), category: r.category.trim(), updatedAt: r.updatedAt, deleted: r.deleted };
+    var cur = rulesById[rec.id];
+    if (cur && cur.rule.updatedAt > rec.updatedAt) { rejected.push(rec.id); return; }
+    if (cur && cur.rule.updatedAt === rec.updatedAt) return;
+    if (cur) writeRows_(ruleState.tab.sheet, J.RULES_TAB, ruleState.tab.headers, cur.row, [J.ruleToRow(rec)]);
+    else newRules.push(J.ruleToRow(rec));
+    changed++;
+  });
+  appendRows_(J.RULES_TAB, newRules);
+
   if (changed > 0) {
     bumpVersion_();
     log_('App saved ' + changed + ' change(s)' + (body.device ? ' from ' + String(body.device).slice(0, 60) : '') + '.');
@@ -1326,7 +1453,7 @@ function onEdit(e) {
   if (!e || !e.range) return;
   var sheet = e.range.getSheet();
   var name = sheet.getName();
-  if (name !== J.TXN_TAB && name !== J.REVIEW_TAB && name !== J.STATEMENT_TAB) return;
+  if (name !== J.TXN_TAB && name !== J.REVIEW_TAB && name !== J.STATEMENT_TAB && name !== J.RULES_TAB) return;
   var first = Math.max(2, e.range.getRow());
   var last = e.range.getRow() + e.range.getNumRows() - 1;
   if (last < first) return;
@@ -1391,6 +1518,7 @@ function readInboxLocked_() {
   loadReview_().items.forEach(function (x) { if (x.item.emailId) known[x.item.emailId] = true; });
   var statements = loadStatements_();
   statements.forEach(function (s) { if (s.emailId) known[s.emailId] = true; });
+  var rules = loadRules_().items.map(function (x) { return x.rule; });
 
   var newTxns = [];
   var newStatements = [];
@@ -1423,6 +1551,8 @@ function readInboxLocked_() {
     var result = J.parseEmail({ from: from, subject: m.getSubject(), receivedAt: m.getDate().toISOString(), text: text });
     if (result.kind === 'txn') {
       var t = J.txnFromParsed(result, { id: Utilities.getUuid(), emailId: emailId, now: stamp });
+      var ruled = J.ruleCategory(t.counterparty, rules);
+      if (ruled && t.category !== 'Transfer') t.category = ruled;
       if (J.isDuplicate(t, existing)) { counts.duplicate++; continue; }
       existing.push(t);
       newTxns.push(J.txnToRow(t));
@@ -1444,15 +1574,47 @@ function readInboxLocked_() {
   appendRows_(J.STATEMENT_TAB, newStatements);
   appendRows_(J.REVIEW_TAB, newReview);
   props.setProperty(LAST_RUN_PROP, new Date(cursor).toISOString());
-  var added = newTxns.length + newStatements.length + newReview.length;
+  var tidied = newTxns.length > 0 ? tidyRecent_() : 0;
+  var added = newTxns.length + newStatements.length + newReview.length + tidied;
   if (added > 0) {
     bumpVersion_();
     log_(
       'Bank emails: ' + counts.txn + ' transaction(s), ' + counts.receipt + ' receipt(s), ' + counts.statement +
-      ' statement(s), ' + counts.review + ' to review, ' + counts.blocked + ' blocked, ' + counts.duplicate + ' duplicate(s).'
+      ' statement(s), ' + counts.review + ' to review, ' + counts.blocked + ' blocked, ' + counts.duplicate + ' duplicate(s)' +
+      (tidied ? ', ' + tidied + ' row(s) tagged as transfers or improved from receipts.' : '.')
     );
   }
   return { ok: true, processed: processed, counts: counts };
+}
+
+/**
+ * After new emails: tag transfers between the owner's own accounts, and take payee and category from
+ * receipts, over the last TIDY_DAYS days. Returns how many rows changed.
+ */
+function tidyRecent_() {
+  var state = loadTxns_();
+  var since = new Date(nowMs_() - TIDY_DAYS * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  var recent = state.items.filter(function (x) { return x.txn.date >= since; });
+  var txns = recent.map(function (x) { return x.txn; });
+  var updates = J.pairTransfers(txns).concat(J.enrichFromReceipts(txns));
+  var byId = {};
+  recent.forEach(function (x) { byId[x.txn.id] = x; });
+  var stamp = nowIso_();
+  var changed = {};
+  updates.forEach(function (u) {
+    var x = byId[u.id];
+    if (!x) return;
+    if (u.category !== undefined) x.txn.category = u.category;
+    if (u.counterparty !== undefined) x.txn.counterparty = u.counterparty;
+    if (u.note !== undefined) x.txn.note = u.note;
+    x.txn.updatedAt = stamp;
+    changed[u.id] = x;
+  });
+  Object.keys(changed).forEach(function (id) {
+    var x = changed[id];
+    writeRows_(state.tab.sheet, J.TXN_TAB, state.tab.headers, x.row, [J.txnToRow(x.txn)]);
+  });
+  return Object.keys(changed).length;
 }
 
 function reviewRow_(m, emailId, from, status, reason, stamp, text) {

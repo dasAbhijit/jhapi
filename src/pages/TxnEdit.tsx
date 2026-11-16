@@ -19,11 +19,12 @@ export default function TxnEdit() {
   const { id } = useParams()
   const [params] = useSearchParams()
   const nav = useNavigate()
-  const { config, data, saveTxn, resolveReview } = useStore()
+  const { config, data, saveTxn, saveRule, resolveReview } = useStore()
   const existing = id ? data?.transactions.find((t) => t.id === id) : undefined
   const [t, setT] = useState<Txn>(() => existing ?? blank(params.get('date') ?? todayIST()))
   const [amount, setAmount] = useState(() => (existing ? (existing.amountPaise / 100).toFixed(2).replace(/\.00$/, '') : ''))
   const [err, setErr] = useState<string | null>(null)
+  const [always, setAlways] = useState(false)
 
   if (!config) return <NotConnected />
   if (id && !existing) return <p className="card muted">This transaction is not in your sheet any more.</p>
@@ -37,6 +38,9 @@ export default function TxnEdit() {
     if (!paise) return setErr('Enter an amount, like 450 or 1,250.50.')
     if (!/^\d{4}-\d{2}-\d{2}$/.test(t.date)) return setErr('Pick a date.')
     saveTxn({ ...t, amountPaise: paise, counterparty: t.counterparty.trim(), note: t.note.trim(), account: t.account.trim() })
+    if (always && t.counterparty.trim()) {
+      saveRule({ id: crypto.randomUUID(), contains: t.counterparty.trim(), category: t.category, updatedAt: '', deleted: false }, true)
+    }
     const reviewId = params.get('review')
     if (reviewId) resolveReview(reviewId, true)
     nav(-1)
@@ -88,6 +92,11 @@ export default function TxnEdit() {
           ))}
         </select>
       </label>
+      {t.counterparty.trim() && (
+        <label className="check">
+          <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} /> Always use {t.category} for “{t.counterparty.trim()}”
+        </label>
+      )}
       <label className="field">
         <span>Account</span>
         <input className="input" list="accounts" value={t.account} placeholder="e.g. axis-bank-1111 or Cash" onChange={(e) => set({ account: e.target.value })} />

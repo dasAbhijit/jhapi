@@ -79,7 +79,7 @@ const CATEGORY_RULES: [RegExp, string][] = [
   [/amazon|flipkart|myntra|ajio|nykaa|meesho|store|mart|retail/i, 'Shopping'],
   [/bigbasket|blinkit|zepto|instamart|grocer|dmart|supermarket/i, 'Groceries'],
   [/uber|ola|rapido|metro|irctc|railway|indigo|air ?india|vistara|travel|toll|fastag|petrol|fuel|hpcl|bpcl|iocl/i, 'Transport'],
-  [/electric|bescom|cesc|wbsedcl|power|water|gas|bsnl|jio|airtel|vodafone|vi |broadband|mobile|dth|utility/i, 'Bills'],
+  [/electric|bescom|cesc|wbsedcl|power|water|gas|bsnl|jio|airtel|vodafone|vi |broadband|mobile|dth|utility|recharge|postpaid|prepaid/i, 'Bills'],
   [/insurance|lic\b|max life|hdfc life|icici pru|star health/i, 'Insurance'],
   [/zerodha|groww|clearing corp|mutual fund|\bmf\b|sip|coin|kfin|cams|nps|ppf/i, 'Investments'],
   [/hospital|pharma|medic|apollo|clinic|health|lab/i, 'Health'],
@@ -170,4 +170,114 @@ export function mergeById<T extends { id: string; updatedAt: string }>(stored: T
     else if (r.updatedAt < cur.updatedAt) rejected.push(r.id)
   }
   return { merged: [...byId.values()], rejected }
+}
+
+// ---------- the owner's category rules ----------
+
+export interface Rule {
+  id: string
+  /** Case-insensitive text to look for in the payee/payer name. */
+  contains: string
+  category: string
+  updatedAt: string
+  deleted: boolean
+}
+
+/** The category from the first live rule whose text appears in the counterparty, or null. */
+export function ruleCategory(counterparty: string, rules: Rule[]): string | null {
+  const name = counterparty.toLowerCase()
+  if (!name) return null
+  const hit = rules.find((r) => !r.deleted && r.contains.trim() && name.includes(r.contains.trim().toLowerCase()))
+  return hit ? hit.category : null
+}
+
+// ---------- transfers between the owner's own accounts ----------
+
+export interface TxnUpdate {
+  id: string
+  category?: string
+  counterparty?: string
+  note?: string
+}
+
+/** UPI handles → bank, for spotting "paid to my own account at Axis". */
+const UPI_HANDLES: [RegExp, string][] = [
+  [/@(axisbank|axl|okaxis|axisb)$/i, 'axis'],
+  [/@(icici|okicici|ibl|ikwik)$/i, 'icici'],
+  [/@(sbi|oksbi|yonosbi)$/i, 'sbi'],
+  [/@(dbs)$/i, 'dbs'],
+]
+
+const institutionOf = (account: string) => account.split('-')[0]
+
+function personName(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/transferred to|deposit by transfer from|transfer (to|from)|\b(mr|ms|mrs|dr)\.?\s/g, ' ')
+    .replace(/[^a-z ]/g, ' ')
+    .replace(/\s+/g, '')
+}
+
+function daysApart(a: string, b: string): number {
+  return Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000
+}
+
+const CARD_BILL = /\bcred\b|credit card|card bill|billdesk|bbps|ccpay/i
+
+/**
+ * Finds pairs that are one movement between two of the owner's own accounts and tags both sides
+ * Transfer, so neither counts as spending or income. A pair needs the same amount, two different
+ * accounts, dates at most a day apart (three for card bills), and one of:
+ * - the debit went to a UPI handle at the credited account's bank (asha@axisbank → Axis);
+ * - both sides name the same person (SBI "Transferred to X" / "Deposit by transfer from X");
+ * - the credit is a card bill payment and the debit looks like one (CRED, BillDesk, "credit card").
+ * Each transaction is used at most once. Rows already tagged Transfer are left alone.
+ */
+export function pairTransfers(txns: Txn[]): TxnUpdate[] {
+  const live = txns.filter((t) => counts(t) && t.account && t.category !== 'Transfer')
+  const debits = live.filter((t) => t.direction === 'debit')
+  const credits = live.filter((t) => t.direction === 'credit')
+  const used = new Set<string>()
+  const out: TxnUpdate[] = []
+  for (const c of credits) {
+    for (const d of debits) {
+      if (used.has(d.id) || used.has(c.id) || d.account === c.account || d.amountPaise !== c.amountPaise) continue
+      const gap = daysApart(d.date, c.date)
+      const handle = UPI_HANDLES.find(([re]) => re.test(d.counterparty.trim()))
+      const byHandle = gap <= 1 && !!handle && handle[1] === institutionOf(c.account)
+      const pd = personName(d.counterparty)
+      const byName = gap <= 1 && pd.length >= 4 && pd === personName(c.counterparty)
+      const byCard = gap <= 3 && c.channel === 'card_payment' && CARD_BILL.test(`${d.counterparty} ${d.note}`)
+      if (!byHandle && !byName && !byCard) continue
+      used.add(d.id)
+      used.add(c.id)
+      out.push({ id: d.id, category: 'Transfer', note: joinNote(d.note, `To ${accountLabel(c.account)}`) })
+      out.push({ id: c.id, category: 'Transfer', note: joinNote(c.note, `From ${accountLabel(d.account)}`) })
+      break
+    }
+  }
+  return out
+}
+
+function joinNote(note: string, add: string): string {
+  return note.includes(add) ? note : note ? `${note}; ${add}` : add
+}
+
+/**
+ * A receipt (PhonePe, YONO…) and the bank's own row share the bank reference. When the bank's row
+ * has no payee, or only the catch-all category, take the receipt's.
+ */
+export function enrichFromReceipts(txns: Txn[]): TxnUpdate[] {
+  const receipts = txns.filter((t) => t.status === 'receipt' && !t.deleted && t.reference)
+  const out: TxnUpdate[] = []
+  for (const p of txns) {
+    if (!counts(p) || !p.reference || p.source !== 'email') continue
+    const r = receipts.find((x) => x.reference === p.reference && x.amountPaise === p.amountPaise)
+    if (!r) continue
+    const u: TxnUpdate = { id: p.id }
+    if (!p.counterparty && r.counterparty) u.counterparty = r.counterparty
+    if ((p.category === 'Other' || p.category === 'Income') && r.category !== 'Other' && r.category !== p.category) u.category = r.category
+    if (u.counterparty || u.category) out.push(u)
+  }
+  return out
 }
