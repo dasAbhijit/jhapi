@@ -2,10 +2,13 @@
 
 Personal finance tracker in rupees: bank and card transactions read automatically from bank alert emails, every kind of asset and loan, net worth, goals and an AI outlook.
 
-**Status:** planned, not yet built.
+**Live app:** https://dasabhijit.github.io/jhapi/ (early build: app skeleton and calculations; screens are being added)
+
+**Status:** M0 and M1 done. See the build plan in [docs/DESIGN.md](docs/DESIGN.md#10-build-plan).
 
 - **Requirements:** [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)
 - **Design and build plan:** [docs/DESIGN.md](docs/DESIGN.md)
+- **Owner setup (Google Cloud, Gemini, Inbox sheet):** [docs/admin/setup.md](docs/admin/setup.md)
 - **Screen mockups:** [design canvas](https://claude.ai/artifact/UNS95CTG4QsjUPiycrECjM) (private)
 
 Made for iPhone and iPad, in Safari.

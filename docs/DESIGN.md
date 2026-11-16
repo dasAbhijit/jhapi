@@ -2,7 +2,7 @@
 
 A personal finance tracker for Indian money: bank and card transactions read automatically from bank alert emails, plus every kind of asset and loan (EPF, PPF, NPS, mutual funds, stocks, FDs, gold, property, home loan), goals with forecasts, and an AI outlook. Amounts are in rupees (₹). See [Requirements](REQUIREMENTS.md) for what it must do and how each item will be checked.
 
-**Status:** M0 (skeleton) and M1 (calculations) are built and tested. Nothing is deployed yet. Progress is tracked in section 10.
+**Status:** M0 (skeleton) and M1 (calculations) are built, tested and live at https://dasabhijit.github.io/jhapi/. Progress is tracked in section 10.
 
 Jhapi (ঝাঁপি) is short for *Lokkhir Jhapi*, the small pot of savings kept in many Bengali homes.
 
