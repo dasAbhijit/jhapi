@@ -53,6 +53,7 @@ Each device keeps its own copy of the URL and code. **Settings › Disconnect th
 - You can add a transaction by typing a new row in **Transactions**: at least **Date** (for example `16/11/2026`), **Amount** (in rupees) and **Type** (`Debit` or `Credit`). The ID and Updated columns fill in by themselves, and the app picks the row up on its next sync.
 - Editing any cell stamps the row's **Updated** time, so your change reaches the app. If the same row is edited in the app and in the sheet, the later edit wins.
 - To delete, type `TRUE` in **Deleted** (the row stays, so the deletion syncs to the app). Rows marked deleted can be removed by hand later.
+- **Goals** can be typed in too: at least `Name`, `Cost today` (rupees) and `Target year`. Setting holdings aside is easier in the app (Invest › Goals).
 - Do not rename the tabs or the header row.
 
 ## Prices

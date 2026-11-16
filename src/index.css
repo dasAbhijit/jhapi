@@ -184,3 +184,20 @@ details summary { cursor: pointer; min-height: 32px; font-size: 14px; color: var
 .nw-change { margin: 0; font-size: 14px; font-weight: 600; color: var(--pos); }
 .nw-change.neg { color: var(--neg); }
 .nw-svg { width: 100%; height: 64px; color: var(--accent); }
+.stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stat-row div { display: flex; flex-direction: column; gap: 2px; }
+.stat-row strong { font-size: 18px; }
+.pos-text { color: var(--pos); }
+.neg-text { color: var(--neg); }
+.pill { font-size: 11px; font-weight: 700; letter-spacing: .04em; border-radius: 30px; padding: 3px 8px; white-space: nowrap; }
+.pill.ok { color: var(--pos); background: var(--pos-soft); }
+.pill.behind { color: var(--neg); background: var(--neg-soft); }
+.pct { display: flex; align-items: center; gap: 4px; width: 96px; flex: none; }
+.pct .input { text-align: right; }
+.band { width: 100%; height: auto; }
+.band-fill { fill: var(--accent); opacity: .18; }
+.band-line { stroke: var(--accent); }
+.band-target { stroke: var(--neg); stroke-width: 1.5; }
+.band-label { font-size: 12px; fill: var(--neg); }
+.band-axis { font-size: 12px; fill: var(--muted); }
+.banner.ok-banner { background: var(--pos-soft); color: var(--pos); border: 1px solid currentColor; }

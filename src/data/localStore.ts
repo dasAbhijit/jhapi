@@ -7,6 +7,7 @@
  */
 import type { Holding } from '../core/holdings'
 import type { Snapshot as NetWorthPoint } from '../core/networth'
+import type { Goal } from '../core/goalPlan'
 import type { ReviewItem, Rule, Statement, Txn } from '../core/records'
 import type { SheetConfig } from './sheetClient'
 
@@ -20,6 +21,7 @@ export interface Snapshot {
   rules: Rule[]
   holdings: Holding[]
   netWorth: NetWorthPoint[]
+  goals: Goal[]
   problems: string[]
 }
 
@@ -28,6 +30,7 @@ export interface Pending {
   review: Pick<ReviewItem, 'id' | 'resolved' | 'updatedAt'>[]
   rules: Rule[]
   holdings: Holding[]
+  goals: Goal[]
 }
 
 export interface KV {
@@ -94,7 +97,7 @@ export class LocalStore {
 
   snapshot(): Snapshot | null {
     const s = read<Snapshot>(this.kv, KEYS.snapshot)
-    return s && Array.isArray(s.transactions) ? { ...s, rules: s.rules ?? [], holdings: s.holdings ?? [], netWorth: s.netWorth ?? [] } : null
+    return s && Array.isArray(s.transactions) ? { ...s, rules: s.rules ?? [], holdings: s.holdings ?? [], netWorth: s.netWorth ?? [], goals: s.goals ?? [] } : null
   }
   setSnapshot(s: Snapshot | null) {
     if (s) this.kv.set(KEYS.snapshot, JSON.stringify(s))
@@ -103,10 +106,10 @@ export class LocalStore {
 
   pending(): Pending {
     const p = read<Pending>(this.kv, KEYS.pending)
-    return { transactions: p?.transactions ?? [], review: p?.review ?? [], rules: p?.rules ?? [], holdings: p?.holdings ?? [] }
+    return { transactions: p?.transactions ?? [], review: p?.review ?? [], rules: p?.rules ?? [], holdings: p?.holdings ?? [], goals: p?.goals ?? [] }
   }
   setPending(p: Pending) {
-    if (p.transactions.length === 0 && p.review.length === 0 && p.rules.length === 0 && p.holdings.length === 0) this.kv.remove(KEYS.pending)
+    if (p.transactions.length === 0 && p.review.length === 0 && p.rules.length === 0 && p.holdings.length === 0 && p.goals.length === 0) this.kv.remove(KEYS.pending)
     else this.kv.set(KEYS.pending, JSON.stringify(p))
   }
 
@@ -124,6 +127,10 @@ export class LocalStore {
 /** Put a changed record into the queue, replacing any earlier unsent change to the same record. */
 export function queueTxn(p: Pending, t: Txn): Pending {
   return { ...p, transactions: [...p.transactions.filter((x) => x.id !== t.id), t] }
+}
+
+export function queueGoal(p: Pending, g: Goal): Pending {
+  return { ...p, goals: [...p.goals.filter((x) => x.id !== g.id), g] }
 }
 
 export function queueHolding(p: Pending, h: Holding): Pending {
@@ -144,8 +151,10 @@ export function withPending(s: Snapshot, p: Pending): Snapshot {
   const resolved = new Map(p.review.map((r) => [r.id, r.resolved]))
   const ruleIds = new Set(p.rules.map((r) => r.id))
   const holdingIds = new Set(p.holdings.map((h) => h.id))
+  const goalIds = new Set(p.goals.map((g) => g.id))
   return {
     ...s,
+    goals: [...s.goals.filter((g) => !goalIds.has(g.id)), ...p.goals],
     holdings: [...s.holdings.filter((h) => !holdingIds.has(h.id)), ...p.holdings],
     rules: [...s.rules.filter((r) => !ruleIds.has(r.id)), ...p.rules],
     transactions: [...s.transactions.filter((t) => !ids.has(t.id)), ...p.transactions],

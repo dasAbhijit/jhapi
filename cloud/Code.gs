@@ -24,6 +24,8 @@ var JhapiCore = (() => {
   // src/cloud/entry.ts
   var entry_exports = {};
   __export(entry_exports, {
+    GOALS_TAB: () => GOALS_TAB,
+    GOAL_HEADERS: () => GOAL_HEADERS,
     HOLDINGS_TAB: () => HOLDINGS_TAB,
     HOLDING_HEADERS: () => HOLDING_HEADERS,
     HOLDING_TYPES: () => HOLDING_TYPES,
@@ -44,6 +46,7 @@ var JhapiCore = (() => {
     checkSender: () => checkSender,
     enrichFromReceipts: () => enrichFromReceipts,
     findSender: () => findSender,
+    goalToRow: () => goalToRow,
     holdingToRow: () => holdingToRow,
     isDuplicate: () => isDuplicate,
     mergeById: () => mergeById,
@@ -54,6 +57,7 @@ var JhapiCore = (() => {
     priceKey: () => priceKey,
     priceUpdates: () => priceUpdates,
     reviewToRow: () => reviewToRow,
+    rowToGoal: () => rowToGoal,
     rowToHolding: () => rowToHolding,
     rowToReview: () => rowToReview,
     rowToRule: () => rowToRule,
@@ -1254,6 +1258,18 @@ var JhapiCore = (() => {
     return { assetsPaise: assets, liabilitiesPaise: liabilities, netPaise: assets + liabilities, byClass };
   }
 
+  // src/core/goalPlan.ts
+  function readTags(s) {
+    return s.split(/[;\n]/).map((p) => p.trim()).filter(Boolean).map((p) => {
+      const i = p.lastIndexOf(":");
+      const pct = Number(p.slice(i + 1).replace("%", ""));
+      return { holdingId: p.slice(0, i).trim(), pct };
+    }).filter((t) => t.holdingId && Number.isFinite(t.pct) && t.pct > 0 && t.pct <= 100);
+  }
+  function writeTags(tags) {
+    return tags.map((t) => `${t.holdingId}:${t.pct}`).join("; ");
+  }
+
   // src/core/sheetRows.ts
   var TXN_TAB = "Transactions";
   var REVIEW_TAB = "Review";
@@ -1548,6 +1564,37 @@ var JhapiCore = (() => {
       byClass: { retirement: get("Retirement"), market: get("Market"), deposits: get("Deposits"), gold_other: get("Gold & other") }
     };
   }
+  var GOALS_TAB = "Goals";
+  var GOAL_HEADERS = ["ID", "Name", "Cost today", "Target year", "Inflation %", "Return %", "Monthly SIP", "Holdings", "Notes", "Updated", "Deleted"];
+  TEXT_COLUMNS[GOALS_TAB] = ["ID", "Holdings", "Updated"];
+  function goalToRow(g) {
+    var _a;
+    return [g.id, g.name, rupees(g.costTodayPaise), g.targetYear, g.inflationPct, (_a = g.returnPct) != null ? _a : "", rupees(g.sipPaise), writeTags(g.tags), g.notes, g.updatedAt, g.deleted ? "TRUE" : ""];
+  }
+  function rowToGoal(row, headers) {
+    var _a, _b;
+    const get = (h) => row[headers.indexOf(h)];
+    if (row.every((c) => c === "" || c === null)) return { goal: null };
+    const cost = paiseFrom(get("Cost today"));
+    const year2 = num(get("Target year"));
+    if (cost === null || cost <= 0) return { goal: null, problem: "missing Cost today" };
+    if (year2 === null || year2 < 2e3 || year2 > 2200) return { goal: null, problem: "missing or unreadable Target year" };
+    return {
+      goal: {
+        id: str(get("ID")),
+        name: str(get("Name")) || "Goal",
+        costTodayPaise: cost,
+        targetYear: Math.round(year2),
+        inflationPct: (_a = num(get("Inflation %"))) != null ? _a : 6,
+        returnPct: num(get("Return %")),
+        sipPaise: (_b = paiseFrom(get("Monthly SIP"))) != null ? _b : 0,
+        tags: readTags(str(get("Holdings"))),
+        notes: str(get("Notes")),
+        updatedAt: str(get("Updated")),
+        deleted: bool(get("Deleted"))
+      }
+    };
+  }
 
   // src/core/prices.ts
   function parseAmfiNav(text) {
@@ -1659,6 +1706,7 @@ var TABS = [
   { name: J.RULES_TAB, headers: J.RULES_HEADERS },
   { name: J.HOLDINGS_TAB, headers: J.HOLDING_HEADERS },
   { name: J.NETWORTH_TAB, headers: J.NETWORTH_HEADERS },
+  { name: J.GOALS_TAB, headers: J.GOAL_HEADERS },
   { name: J.LOG_TAB, headers: ['Time', 'Event'] },
 ];
 
@@ -1916,6 +1964,15 @@ function holdingFromRow_(row, headers) {
   return r.holding || (r.problem ? { problem: r.problem } : null);
 }
 
+function goalFromRow_(row, headers) {
+  var r = J.rowToGoal(row, headers);
+  return r.goal || (r.problem ? { problem: r.problem } : null);
+}
+
+function loadGoals_(problems) {
+  return loadTable_(J.GOALS_TAB, goalFromRow_, J.goalToRow, problems);
+}
+
 function loadRules_(problems) {
   return loadTable_(J.RULES_TAB, ruleFromRow_, J.ruleToRow, problems);
 }
@@ -1960,6 +2017,7 @@ function pull_() {
     rules: loadRules_(t.problems).items.map(function (x) { return x.rec; }),
     holdings: loadHoldings_(t.problems).items.map(function (x) { return x.rec; }),
     netWorth: loadSnapshots_(),
+    goals: loadGoals_(t.problems).items.map(function (x) { return x.rec; }),
     problems: t.problems,
   };
 }
@@ -1975,8 +2033,22 @@ function validatePush_(body) {
   var review = body.review || [];
   var rules = body.rules || [];
   var holdings = body.holdings || [];
-  if (!Array.isArray(txns) || !Array.isArray(review) || !Array.isArray(rules) || !Array.isArray(holdings)) throw new Error('Bad request.');
-  if (txns.length + review.length + rules.length + holdings.length > MAX_RECORDS_PER_PUSH) throw new Error('Too many changes in one request.');
+  var goals = body.goals || [];
+  if (!Array.isArray(txns) || !Array.isArray(review) || !Array.isArray(rules) || !Array.isArray(holdings) || !Array.isArray(goals)) throw new Error('Bad request.');
+  if (txns.length + review.length + rules.length + holdings.length + goals.length > MAX_RECORDS_PER_PUSH) throw new Error('Too many changes in one request.');
+  goals.forEach(function (g, i) {
+    var where = 'Goal ' + (i + 1) + ': ';
+    if (!g || typeof g.id !== 'string' || !g.id || g.id.length > 100) throw new Error(where + 'bad id.');
+    if (typeof g.name !== 'string' || g.name.length > 200 || typeof g.notes !== 'string' || g.notes.length > 2000) throw new Error(where + 'bad text.');
+    if (typeof g.costTodayPaise !== 'number' || !(g.costTodayPaise > 0) || g.costTodayPaise > 1e15) throw new Error(where + 'bad cost.');
+    if (typeof g.targetYear !== 'number' || g.targetYear < 2000 || g.targetYear > 2200) throw new Error(where + 'bad target year.');
+    if (typeof g.inflationPct !== 'number' || !isFinite(g.inflationPct) || (g.returnPct !== null && (typeof g.returnPct !== 'number' || !isFinite(g.returnPct)))) throw new Error(where + 'bad rate.');
+    if (typeof g.sipPaise !== 'number' || g.sipPaise < 0 || !Array.isArray(g.tags) || g.tags.length > 100) throw new Error(where + 'bad SIP or holdings.');
+    g.tags.forEach(function (tag) {
+      if (!tag || typeof tag.holdingId !== 'string' || /[:;]/.test(tag.holdingId) || typeof tag.pct !== 'number' || !(tag.pct > 0) || tag.pct > 100) throw new Error(where + 'bad holding share.');
+    });
+    if (typeof g.deleted !== 'boolean' || !ISO_TIME.test(String(g.updatedAt))) throw new Error(where + 'bad record.');
+  });
   holdings.forEach(function (h, i) {
     var where = 'Holding ' + (i + 1) + ': ';
     if (!h || typeof h.id !== 'string' || !h.id || h.id.length > 100) throw new Error(where + 'bad id.');
@@ -2072,6 +2144,13 @@ function push_(body) {
     return out;
   });
   changed += mergeTable_(J.HOLDINGS_TAB, loadHoldings_(), cleanHoldings, J.holdingToRow, rejected);
+  var cleanGoals = (body.goals || []).map(function (g) {
+    return {
+      id: g.id, name: g.name, costTodayPaise: g.costTodayPaise, targetYear: g.targetYear, inflationPct: g.inflationPct, returnPct: g.returnPct,
+      sipPaise: g.sipPaise, tags: g.tags.map(function (x) { return { holdingId: x.holdingId, pct: x.pct }; }), notes: g.notes, updatedAt: g.updatedAt, deleted: g.deleted,
+    };
+  });
+  changed += mergeTable_(J.GOALS_TAB, loadGoals_(), cleanGoals, J.goalToRow, rejected);
 
   if (changed > 0) {
     bumpVersion_();
@@ -2089,7 +2168,7 @@ function onEdit(e) {
   if (!e || !e.range) return;
   var sheet = e.range.getSheet();
   var name = sheet.getName();
-  if ([J.TXN_TAB, J.REVIEW_TAB, J.STATEMENT_TAB, J.RULES_TAB, J.HOLDINGS_TAB].indexOf(name) < 0) return;
+  if ([J.TXN_TAB, J.REVIEW_TAB, J.STATEMENT_TAB, J.RULES_TAB, J.HOLDINGS_TAB, J.GOALS_TAB].indexOf(name) < 0) return;
   var first = Math.max(2, e.range.getRow());
   var last = e.range.getRow() + e.range.getNumRows() - 1;
   if (last < first) return;

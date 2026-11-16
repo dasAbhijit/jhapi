@@ -11,6 +11,7 @@ import { looseDate } from './parsers/text'
 import type { ReviewItem, Rule, Statement, Txn, TxnSource, TxnStatus } from './records'
 import { HOLDING_TYPES, type Holding, type HoldingType } from './holdings'
 import type { Snapshot as NetWorthSnapshot } from './networth'
+import { readTags, writeTags, type Goal } from './goalPlan'
 
 export type Cell = string | number | boolean | null
 
@@ -256,5 +257,39 @@ export function rowToSnapshot(row: (Cell | Date)[], headers: string[]): NetWorth
   return {
     date, netPaise: get('Net worth'), holdingsPaise: get('Holdings'), bankPaise: get('Bank balances'), liabilitiesPaise: get('Loans'),
     byClass: { retirement: get('Retirement'), market: get('Market'), deposits: get('Deposits'), gold_other: get('Gold & other') },
+  }
+}
+
+// ---------- Goals tab ----------
+
+export const GOALS_TAB = 'Goals'
+export const GOAL_HEADERS = ['ID', 'Name', 'Cost today', 'Target year', 'Inflation %', 'Return %', 'Monthly SIP', 'Holdings', 'Notes', 'Updated', 'Deleted'] as const
+TEXT_COLUMNS[GOALS_TAB] = ['ID', 'Holdings', 'Updated']
+
+export function goalToRow(g: Goal): Cell[] {
+  return [g.id, g.name, rupees(g.costTodayPaise), g.targetYear, g.inflationPct, g.returnPct ?? '', rupees(g.sipPaise), writeTags(g.tags), g.notes, g.updatedAt, g.deleted ? 'TRUE' : '']
+}
+
+export function rowToGoal(row: (Cell | Date)[], headers: string[]): { goal: Goal | null; problem?: string } {
+  const get = (h: string) => row[headers.indexOf(h)] as Cell
+  if (row.every((c) => c === '' || c === null)) return { goal: null }
+  const cost = paiseFrom(get('Cost today'))
+  const year = num(get('Target year'))
+  if (cost === null || cost <= 0) return { goal: null, problem: 'missing Cost today' }
+  if (year === null || year < 2000 || year > 2200) return { goal: null, problem: 'missing or unreadable Target year' }
+  return {
+    goal: {
+      id: str(get('ID')),
+      name: str(get('Name')) || 'Goal',
+      costTodayPaise: cost,
+      targetYear: Math.round(year),
+      inflationPct: num(get('Inflation %')) ?? 6,
+      returnPct: num(get('Return %')),
+      sipPaise: paiseFrom(get('Monthly SIP')) ?? 0,
+      tags: readTags(str(get('Holdings'))),
+      notes: str(get('Notes')),
+      updatedAt: str(get('Updated')),
+      deleted: bool(get('Deleted')),
+    },
   }
 }

@@ -9,8 +9,9 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Holding } from '../core/holdings'
+import type { Goal } from '../core/goalPlan'
 import type { Rule, Txn } from '../core/records'
-import { LocalStore, queueHolding, queueReview, queueRule, queueTxn, withPending, type Pending, type Snapshot } from './localStore'
+import { LocalStore, queueGoal, queueHolding, queueReview, queueRule, queueTxn, withPending, type Pending, type Snapshot } from './localStore'
 import { SheetClient, SheetError, validateUrl, type PullResult, type SheetConfig, type Transport } from './sheetClient'
 import { Ctx, type Store } from './storeContext'
 
@@ -27,6 +28,7 @@ function toSnapshot(r: PullResult): Snapshot {
     rules: r.rules ?? [],
     holdings: r.holdings ?? [],
     netWorth: r.netWorth ?? [],
+    goals: r.goals ?? [],
     problems: r.problems,
   }
 }
@@ -59,6 +61,7 @@ export function StoreProvider({ children, local = new LocalStore(), transport }:
           review: now.review.filter((x) => !sent.review.some((s) => s.id === x.id && s.updatedAt === x.updatedAt)),
           rules: now.rules.filter((x) => !sent.rules.some((s) => s.id === x.id && s.updatedAt === x.updatedAt)),
           holdings: now.holdings.filter((x) => !sent.holdings.some((s) => s.id === x.id && s.updatedAt === x.updatedAt)),
+          goals: now.goals.filter((x) => !sent.goals.some((s) => s.id === x.id && s.updatedAt === x.updatedAt)),
         }
         local.setPending(left)
         setPending(left)
@@ -84,7 +87,7 @@ export function StoreProvider({ children, local = new LocalStore(), transport }:
       do {
         again.current = false
         const sent = local.pending()
-        const hasChanges = sent.transactions.length > 0 || sent.review.length > 0 || sent.rules.length > 0 || sent.holdings.length > 0
+        const hasChanges = sent.transactions.length > 0 || sent.review.length > 0 || sent.rules.length > 0 || sent.holdings.length > 0 || sent.goals.length > 0
         const r = hasChanges ? await client.push(sent, local.deviceName()) : await client.pull()
         apply(r, hasChanges ? sent : null)
       } while (again.current)
@@ -159,10 +162,10 @@ export function StoreProvider({ children, local = new LocalStore(), transport }:
   const disconnect = useCallback(() => {
     local.setConfig(null)
     local.setSnapshot(null)
-    local.setPending({ transactions: [], review: [], rules: [], holdings: [] })
+    local.setPending({ transactions: [], review: [], rules: [], holdings: [], goals: [] })
     setConfig(null)
     setSnapshot(null)
-    setPending({ transactions: [], review: [], rules: [], holdings: [] })
+    setPending({ transactions: [], review: [], rules: [], holdings: [], goals: [] })
     setError(null)
   }, [local])
 
@@ -180,6 +183,16 @@ export function StoreProvider({ children, local = new LocalStore(), transport }:
   const saveHolding = useCallback(
     (h: Holding) => {
       const p = queueHolding(local.pending(), { ...h, updatedAt: new Date().toISOString() })
+      local.setPending(p)
+      setPending(p)
+      void sync()
+    },
+    [local, sync],
+  )
+
+  const saveGoal = useCallback(
+    (g: Goal) => {
+      const p = queueGoal(local.pending(), { ...g, updatedAt: new Date().toISOString() })
       local.setPending(p)
       setPending(p)
       void sync()
@@ -219,13 +232,14 @@ export function StoreProvider({ children, local = new LocalStore(), transport }:
   const data = useMemo(() => (snapshot ? withPending(snapshot, pending) : null), [snapshot, pending])
 
   const value: Store = {
+    saveGoal,
     refreshPrices,
     refreshingPrices,
     saveRule,
     saveHolding,
     config,
     data,
-    pendingCount: pending.transactions.length + pending.review.length + pending.rules.length + pending.holdings.length,
+    pendingCount: pending.transactions.length + pending.review.length + pending.rules.length + pending.holdings.length + pending.goals.length,
     syncing,
     readingInbox,
     error,

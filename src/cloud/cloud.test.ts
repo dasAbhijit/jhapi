@@ -30,7 +30,7 @@ describe('setup', () => {
   it('creates the tabs, a long secret code and one 10-minute trigger', () => {
     const { env, token } = ready()
     expect(token).toMatch(/^[0-9a-f]{64}$/)
-    expect(Object.keys(env.sheets).sort()).toEqual(['Holdings', 'Log', 'Net worth', 'Review', 'Rules', 'Statements', 'Transactions'])
+    expect(Object.keys(env.sheets).sort()).toEqual(['Goals', 'Holdings', 'Log', 'Net worth', 'Review', 'Rules', 'Statements', 'Transactions'])
     expect(env.tab(TXN_TAB)[0]).toEqual([...TXN_HEADERS])
     expect(env.sheets[TXN_TAB].frozen).toBe(1)
     env.fn('setup')()
@@ -324,5 +324,28 @@ describe('prices and net worth', () => {
     const r = env.call({ token, action: 'refreshPrices' })
     expect(r.ok).toBe(true)
     expect(env.tab('Log').some((x) => /AMFI NAVs not fetched \(HTTP 404\)/.test(String(x[1])))).toBe(true)
+  })
+})
+
+describe('goals sync', () => {
+  const g = {
+    id: 'g1', name: 'College', costTodayPaise: 250000000, targetYear: 2036, inflationPct: 6, returnPct: null, sipPaise: 600000,
+    tags: [{ holdingId: 'h1', pct: 50 }], notes: '', updatedAt: '2026-11-17T10:00:00.000Z', deleted: false,
+  }
+  it('push writes readable columns; hand-typed goals are read back', () => {
+    const { env, token } = ready()
+    const r = env.call({ token, action: 'push', goals: [g] })
+    expect(r.goals).toEqual([g])
+    expect(env.tab('Goals')[1].slice(1, 8)).toEqual(['College', 2500000, 2036, 6, '', 6000, 'h1:50'])
+    env.sheets.Goals.grid.push(['', 'Car', 800000, 2029, '', '', '', '', '', '', ''])
+    env.sheets.Goals.grid.push(['', 'No year', 100, '', '', '', '', '', '', '', ''])
+    const p = env.call({ token, action: 'pull' })
+    expect(p.goals[1]).toMatchObject({ name: 'Car', costTodayPaise: 80000000, targetYear: 2029, inflationPct: 6, sipPaise: 0 })
+    expect(p.problems).toEqual(['Goals row 4: missing or unreadable Target year'])
+  })
+  it('refuses a share over 100% or an id that would break the Holdings cell', () => {
+    const { env, token } = ready()
+    expect(env.call({ token, action: 'push', goals: [{ ...g, tags: [{ holdingId: 'h1', pct: 120 }] }] }).error).toBe('Goal 1: bad holding share.')
+    expect(env.call({ token, action: 'push', goals: [{ ...g, tags: [{ holdingId: 'a:b', pct: 10 }] }] }).error).toBe('Goal 1: bad holding share.')
   })
 })

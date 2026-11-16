@@ -97,10 +97,10 @@ Every requirement starts as **Planned**. The milestone column refers to the buil
 
 | ID | Requirement | Milestone | Verified |
 |---|---|---|---|
-| G1 | The owner can create goals with a cost in today's rupees, a target year and an inflation rate | M6 | Planned |
-| G2 | Each goal shows cost at the target year, amount funded, gap, SIP planned and SIP needed | M6 | Planned |
-| G3 | Holdings can be tagged to goals by percentage, never more than 100% in total per holding | M6 | Planned |
-| G4 | Each goal shows a forecast band (10th to 90th percentile and median, in today's rupees) and the chance of reaching it | M6 | Planned |
+| G1 | The owner can create goals with a cost in today's rupees, a target year and an inflation rate, in the app or the sheet | M6 | Auto (round trip; script reads hand-typed goals and reports unreadable ones) |
+| G2 | Each goal shows cost at the target year, amount funded, SIP planned and SIP needed | M6 | Auto (goal view tests, round trip) |
+| G3 | Holdings can be tagged to goals by percentage; more than 100% in total per holding is flagged | M6 | Auto (over-allocation test; script refuses a share over 100%) |
+| G4 | Each goal shows a forecast band (10th to 90th percentile and median, in today's rupees) and the chance of reaching it | M6 | Auto (forecast matches plain compounding at zero volatility; repeatable; more SIP → higher chance) |
 | G5 | Goals under 3 years away with equity tagged show a suggestion to move part to debt | M6 | Planned |
 
 ### H. AI Outlook

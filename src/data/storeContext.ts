@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react'
 import type { Holding } from '../core/holdings'
+import type { Goal } from '../core/goalPlan'
 import type { Rule, Txn } from '../core/records'
 import type { Snapshot } from './localStore'
 import type { SheetConfig } from './sheetClient'
@@ -20,6 +21,7 @@ export interface Store {
   refreshingPrices: boolean
   saveTxn(t: Txn): void
   saveHolding(h: Holding): void
+  saveGoal(g: Goal): void
   /** Save a category rule; with `apply`, also recategorise other transactions from the same payee. */
   saveRule(r: Rule, apply?: boolean): void
   resolveReview(id: string, resolved: boolean): void

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { summarise } from '../core/holdings'
+import { viewGoal } from '../core/goalPlan'
 import { accountLabel, counts } from '../core/records'
 import { formatRupees, formatShort } from '../core/money'
 import { useStore } from '../data/storeContext'
@@ -24,6 +25,8 @@ export default function Home() {
   // Bank balances only count when a bank email reported one; cards are left to their statements.
   const cash = accts.filter((a) => a.balancePaise !== null && a.account.includes('-bank-')).reduce((s, a) => s + (a.balancePaise ?? 0), 0)
   const net = port.netPaise + cash
+  const goalViews = (data?.goals ?? []).filter((g) => !g.deleted).map((g) => viewGoal(g, data?.holdings ?? [], today))
+  const behind = goalViews.filter((v) => !v.plan.onTrack).length
   const max = top[0]?.paise ?? 1
 
   return (
@@ -55,6 +58,15 @@ export default function Home() {
           </Link>
           <NetWorthChart snapshots={data?.netWorth ?? []} today={today} />
         </section>
+        {goalViews.length > 0 && (
+          <Link className="card tap-card" to="/goals">
+            <div className="kv">
+              <h2>Goals</h2>
+              <span className={behind ? 'pill behind' : 'pill ok'}>{behind ? `${behind} BEHIND` : 'ALL ON TRACK'}</span>
+            </div>
+            <span className="row-sub">{goalViews.map((v) => `${v.goal.name} ${Math.round(v.forecast.chance * 100)}%`).join(' · ')}</span>
+          </Link>
+        )}
         {dues.length > 0 && (
           <section className="card">
             <h2>Card bills due</h2>

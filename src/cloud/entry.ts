@@ -10,6 +10,7 @@ export {
   TXN_TAB, REVIEW_TAB, STATEMENT_TAB, LOG_TAB, RULES_TAB, TXN_HEADERS, REVIEW_HEADERS, STATEMENT_HEADERS, RULES_HEADERS, TEXT_COLUMNS,
   txnToRow, rowToTxn, reviewToRow, rowToReview, statementToRow, rowToStatement, ruleToRow, rowToRule,
   HOLDINGS_TAB, HOLDING_HEADERS, holdingToRow, rowToHolding, NETWORTH_TAB, NETWORTH_HEADERS, snapshotToRow, rowToSnapshot,
+  GOALS_TAB, GOAL_HEADERS, goalToRow, rowToGoal,
 } from '../core/sheetRows'
 export { HOLDING_TYPES } from '../core/holdings'
 export { parseAmfiNav, priceKey, priceUpdates } from '../core/prices'

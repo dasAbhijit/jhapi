@@ -173,4 +173,35 @@ describe('app and sheet round trip', () => {
       expect(row?.[11]).toBe(7.1)
     })
   })
+
+  it('creates a goal with a holding set aside, shows its forecast, and saves both to the sheet', async () => {
+    const user = userEvent.setup()
+    const { env, token } = setup()
+    env.sheets.Holdings.grid.push(['h1', 'Flexi cap fund', 'Mutual fund', '', '', '', '', '', '', 10000, '', '', '', '', '', '', '', '', '', '2026-11-17T09:00:00.000Z', ''])
+    await user.type(screen.getByLabelText('Web app URL'), URL)
+    await user.type(screen.getByLabelText('Secret code'), token)
+    await user.click(screen.getByRole('button', { name: 'Connect' }))
+    await screen.findByText('Transactions in the sheet')
+
+    await user.click(screen.getByRole('link', { name: 'Invest' }))
+    await user.click(await screen.findByRole('link', { name: 'Goals' }))
+    await user.click(await screen.findByRole('link', { name: '+ New goal' }))
+    await user.type(screen.getByLabelText('Name'), 'College')
+    await user.type(screen.getByLabelText('Cost today (₹)'), '25,00,000')
+    await user.clear(screen.getByLabelText('Target year'))
+    await user.type(screen.getByLabelText('Target year'), '2036')
+    await user.type(screen.getByLabelText('Monthly SIP planned (₹)'), '6000')
+    await user.type(screen.getByLabelText('Share of Flexi cap fund for this goal, percent'), '50')
+    expect(await screen.findByText(/Chance of reaching it: \d+%/)).toBeInTheDocument()
+    expect(screen.getByText('₹5,000')).toBeInTheDocument() // half of the ₹10,000 fund
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('College')).toBeInTheDocument()
+    expect(screen.getByText('BEHIND')).toBeInTheDocument()
+    await waitFor(() => {
+      const row = env.tab('Goals')[1]
+      expect(row?.slice(1, 4)).toEqual(['College', 2500000, 2036])
+      expect(row?.[7]).toBe('h1:50')
+    })
+  })
 })

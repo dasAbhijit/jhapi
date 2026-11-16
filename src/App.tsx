@@ -1,4 +1,6 @@
 import { NavLink, Route, Routes } from 'react-router-dom'
+import GoalEdit from './pages/GoalEdit.tsx'
+import Goals from './pages/Goals.tsx'
 import HoldingEdit from './pages/HoldingEdit.tsx'
 import Home from './pages/Home.tsx'
 import { Placeholder } from './pages/Placeholder.tsx'
@@ -26,6 +28,9 @@ export default function App() {
           <Route path="/portfolio" element={<Portfolio />} />
           <Route path="/portfolio/new" element={<HoldingEdit key="new" />} />
           <Route path="/portfolio/:id" element={<HoldingEdit />} />
+          <Route path="/goals" element={<Goals />} />
+          <Route path="/goals/new" element={<GoalEdit key="new" />} />
+          <Route path="/goals/:id" element={<GoalEdit />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Placeholder title="Not found" />} />
         </Routes>

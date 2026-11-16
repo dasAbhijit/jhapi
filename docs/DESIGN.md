@@ -142,7 +142,17 @@ Amounts are **rupees** in the sheet and integer **paise** in the app. Dates are 
 
 **Prices (auto):** a helper tab of `GOOGLEFINANCE` formulas the script rewrites each morning; not synced.
 
-Goals and outlooks (M6–M7) will get their own tabs in the same style.
+**Goals:** `ID`, `Name`, `Cost today`, `Target year`, `Inflation %`, `Return %`, `Monthly SIP`, `Holdings`, `Notes`, `Updated`, `Deleted`. `Holdings` lists the holdings set aside for the goal as `holdingID:percent; …` (the app writes it; by hand, copy IDs from the Holdings tab). `Return %` empty means "use the usual return of the tagged holdings' classes".
+
+- **Worked out in the app** (`src/core/goalPlan.ts`):
+  - Set aside today = each tagged holding's value × its share.
+  - Future cost = cost today × (1 + inflation)^years.
+  - SIP needed comes from M1's `planGoal`.
+  - The **forecast** (`src/core/forecast.ts`) runs 1,000 simulated futures. Each month's return is drawn from the expected return and volatility. The volatility is weighted by the tagged holdings' classes: equity 15%, retirement 6%, deposits 1%, gold and property 12%. The results are shown in today's rupees, with the 10th–90th percentile band, the median, and the chance of reaching the cost.
+  - A fixed random seed makes the picture the same on every device.
+- A holding set aside more than 100% across goals is flagged.
+
+Outlooks (M7) will get their own tab in the same style.
 
 ## 7. Core logic (`src/core`)
 
@@ -184,6 +194,8 @@ Built for **iPhone and iPad in Safari**. Phone layout uses the 390px design widt
 | Settings ✅ | Connect the sheet (web app URL and secret code), last sync and last email run, rows the sheet could not read, Sync now, Read bank emails now, Disconnect this device |
 | Portfolio ✅ | Net worth from holdings, then each class (Retirement, Market, Deposits, Gold & other, Liabilities) with its total; each holding shows how its value was found (CALC, PRICE, EMI, MANUAL) and what is missing |
 | Add / edit holding ✅ | Type picker grouped by class, then only the fields that type needs, with a live "value today" preview |
+| Goals ✅ | On track / behind counts and monthly SIP gap; a card per goal with cost today and in the target year, funded %, SIP needed vs planned, chance of reaching it |
+| Goal detail ✅ | Name, cost, year, inflation, SIP, optional return; a share box for each holding; live cost in target year, set aside today, SIP needed, forecast band and chance |
 | Unlock (M8) | Passkey or passphrase when encryption arrives |
 | Portfolio | Net worth and liquid amount, holdings grouped by class with source badge (AUTO, CAS, CALC, MANUAL) and value date, + Add entry |
 | Add entry | Search and type picker, CAS import |
@@ -206,7 +218,7 @@ Re-planned on 17 Nov 2026 when the owner chose the Google Sheet as the store.
 | M5a ✅ | Holdings tab synced both ways; Portfolio and add/edit screens; values from the M1 calculators; net worth on Home (holdings + bank balances from emails − loans) | Round trip: a PPF added in the app shows the right value and lands in the sheet |
 | M5b ✅ | Prices every morning (AMFI NAVs by scheme code; GOOGLEFINANCE by symbol, through a helper tab), daily net worth snapshots, Home chart with 1M/3M/6M/1Y/FY/All, Update prices now | Script tests on fake Google (AMFI file, GOOGLEFINANCE, AMFI down, same-day rerun) |
 | M5c | EPF/PPF/SSY declared rates by year; loan rate changes and prepayments entered in the app; CAS statement import | Owner's EPF and loan match their statements |
-| M6 | Goals, goal tagging, forecast worker | Goal detail matches the design |
+| M6 ✅ | Goals tab synced both ways; Goals and goal detail screens; holdings set aside by share; SIP needed; 1,000-run forecast band and chance; over-100% warning; goals on Home | Round trip: a goal with a 50% share of a fund lands in the sheet and shows BEHIND with its chance |
 | M7 | AI Outlook and Gemini fallback for unparsed emails | Outlook screens work with a real key |
 | M8 | Encryption on the device (passphrase or passkey), CAS PDF import, CSV export, user guide in `docs/` synced to GitBook | Installed on the owner's phone and in daily use |
 

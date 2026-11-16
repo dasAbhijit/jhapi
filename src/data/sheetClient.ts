@@ -5,6 +5,7 @@
  */
 import type { Holding } from '../core/holdings'
 import type { Snapshot as NetWorthPoint } from '../core/networth'
+import type { Goal } from '../core/goalPlan'
 import type { ReviewItem, Rule, Statement, Txn } from '../core/records'
 
 export interface SheetConfig {
@@ -22,6 +23,7 @@ export interface PullResult {
   rules?: Rule[]
   holdings?: Holding[]
   netWorth?: NetWorthPoint[]
+  goals?: Goal[]
   problems: string[]
   rejected?: string[]
 }
@@ -103,7 +105,7 @@ export class SheetClient {
     return this.call('pull')
   }
 
-  push(changes: { transactions?: Txn[]; review?: Pick<ReviewItem, 'id' | 'resolved' | 'updatedAt'>[]; rules?: Rule[]; holdings?: Holding[] }, device: string): Promise<PullResult> {
+  push(changes: { transactions?: Txn[]; review?: Pick<ReviewItem, 'id' | 'resolved' | 'updatedAt'>[]; rules?: Rule[]; holdings?: Holding[]; goals?: Goal[] }, device: string): Promise<PullResult> {
     return this.call('push', { ...changes, device })
   }
 
