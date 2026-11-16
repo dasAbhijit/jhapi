@@ -15,6 +15,7 @@ Screen mockups are on the [design canvas](https://claude.ai/artifact/UNS95CTG4Qs
 | App hosting | GitHub Pages at `https://dasabhijit.github.io/jhapi/`, deployed by GitHub Actions on every push to `main`. Same setup as Bhag | Free, static, sits with the code |
 | Repo | `dasAbhijit/jhapi`, public | GitHub Pages on a free account needs a public repo. No data or keys ever live in the repo |
 | Client | React, TypeScript, Vite, installable PWA. Tooling copied from Bhag (oxlint, vitest, `vite-plugin-pwa`) | One codebase for iPhone, Android and desktop |
+| Main devices | **iPhone and iPad, in Safari** (mostly in the browser, not installed). Mac Chrome now and then. iOS Safari is the browser every feature is built and tested against first | The owner said so. Shapes storage, layout and unlock (section 5 and section 9) |
 | Where data lives | **Encrypted on each device** (IndexedDB), with an **encrypted backup and sync in the owner's Google Drive** (`appDataFolder`). No database server | Financial data never sits readable on any server. Google stores only ciphertext |
 | Reading email | A **Google Apps Script** in the owner's own Google account checks Gmail every 10 minutes and puts new bank alerts into an "Inbox" Google Sheet. The app reads and clears that sheet | Runs while the app is closed. Avoids Gmail's restricted OAuth scope, which would need Google's security review |
 | Google scopes in the app | `drive.appdata` (backup) and `drive.file` (only the Inbox sheet the owner picks). Both are non-sensitive | No Google verification needed |
@@ -113,7 +114,12 @@ The app shell is cached for offline start-up. The vault works offline. Email imp
 - **Merge rule:** for each record, the version with the highest clock wins. Deletes are tombstones.
 - **Compaction:** when there are more than 200 batch files, a device writes `snapshot.enc` holding the full state and the last sequence seen per device, then deletes the batches it covers.
 - **Devices list** comes from the batch files and each device's last-seen time. **Remove** stops listing a device; it does not wipe it remotely.
-- On iPhone, Safari can delete website data for sites that are not installed. The app asks to be installed to the home screen and treats Drive as the copy to restore from.
+- **Safari in the browser (not installed):**
+  - Safari deletes a site's stored data after 7 days of using Safari without opening that site. Opening Jhapi every few days keeps it; if it is deleted, the app restores from Drive after unlocking. **Drive is the copy to trust; the device is a cache.**
+  - The app calls `navigator.storage.persist()` and shows a short tip that adding Jhapi to the Home Screen stops Safari deleting its data. It never blocks use in the browser.
+  - iPhone and iPad each count as a separate device with their own data on this device. Safari's private browsing keeps nothing, so the app warns there.
+- **Unlock on iPhone and iPad:** passkeys come from iCloud Keychain with Face ID or Touch ID. The PRF extension needed to unlock the vault with a passkey works in Safari on iOS and iPadOS 18 and later. Earlier versions fall back to the passphrase.
+- **Google sign-in in Safari** opens as a pop-up, so it is only started from a tap, never automatically.
 
 ## 6. Data model (records inside the vault)
 
@@ -174,7 +180,12 @@ Pure functions with no UI or network code, covered by unit and randomized tests,
 
 ## 9. Screens
 
-Phone-first, 390px design width, as on the design canvas. On wide screens the layout centres in a column and the bottom tabs become a top menu.
+Built for **iPhone and iPad in Safari**. Phone layout uses the 390px design width from the design canvas.
+
+- **iPhone** (under 700px wide): one column, bottom tab bar, safe-area padding for the home indicator.
+- **iPad** (700px and wider, portrait and landscape, including Split View): a side bar instead of the bottom tabs, and two columns where it helps: list and detail side by side for Transactions and Portfolio, and Dashboard cards in a grid. The iPad layout is built in M5 alongside the screens, not left for later.
+- Touch first: 44px targets, no hover-only controls, inputs at 16px or larger so Safari does not zoom in, and the right keyboards (`inputmode="decimal"` for amounts).
+- Works with the iPad keyboard and trackpad, and with Dynamic Type sizes.
 
 | Screen | What it shows |
 |---|---|
@@ -213,7 +224,7 @@ M4a comes straight after M1 because email parsing is the riskiest part.
 | Some banks send UPI alerts by SMS only | Check each bank in M4a. Manual entry covers the gap |
 | A bank changes its email layout | Fixtures and tests catch it. The email lands in Not parsed, never lost |
 | Phishing email that looks like a bank | DKIM and sender-domain check; BLOCKED items never touch balances |
-| iPhone deletes website data | Install to home screen; Drive is the copy to restore from |
+| Safari deletes website data after 7 days without a visit | Drive is the copy to trust and the app restores from it after unlock. Adding to the Home Screen is suggested, not required |
 | Lost passphrase and recovery key | Data cannot be recovered. Said clearly at setup |
 | Apps Script quotas | One person's bank mail is far below Gmail read limits |
 | Inbox sheet holds email text in plain form | It is the owner's own Google account, which already holds the same emails. Rows are deleted a day after import |
@@ -221,5 +232,4 @@ M4a comes straight after M1 because email parsing is the riskiest part.
 
 ## 12. Open questions
 
-1. Banks and cards to support first, with one sample alert of each kind.
-2. Whether to show a web (wider) layout in M5 or later.
+1. Banks and cards to support first, with one sample alert of each kind. (Being collected into the git-ignored `samples/` folder.)

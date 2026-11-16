@@ -117,8 +117,10 @@ Every requirement starts as **Planned**. The milestone column refers to the buil
 
 | ID | Requirement | Milestone | Verified |
 |---|---|---|---|
-| I1 | Installs to the home screen on iPhone and Android, and as an app on desktop Chrome | M0, M8 | Planned |
+| I1 | Works fully in Safari on iPhone and iPad without being installed. Can also be added to the Home Screen, and installed from desktop Chrome | M0, M8 | Planned |
 | I2 | Opens and shows stored data with no connection | M2 | Planned |
+| I5 | On iPad, uses the wider screen: a side bar, and list and detail side by side, in portrait, landscape and Split View | M5 | Planned |
+| I6 | If Safari has deleted the data on a device, everything comes back from Drive after unlocking, and the app explains what happened | M3 | Planned |
 | I3 | The owner can export transactions and holdings as CSV, with formula-looking cells made safe | M8 | Planned |
 | I4 | A user guide lives in `docs/` and syncs to GitBook | M8 | Planned |
 
@@ -128,7 +130,7 @@ Every requirement starts as **Planned**. The milestone column refers to the buil
 |---|---|---|
 | N1 | Money is stored as integer paise and every total adds up to the paisa | Planned |
 | N2 | No secret key is in the repo or the build. Only the restricted Google client ID and Picker key are public | Planned |
-| N3 | Works on the latest iOS Safari, Android Chrome and desktop Chrome | Planned |
-| N4 | Unlock to Dashboard in under 2 seconds with 5 years of data on a recent phone | Planned |
+| N3 | Built and tested first on Safari for iOS and iPadOS 18 and later. Also works on desktop Chrome | Planned |
+| N4 | Unlock to Dashboard in under 2 seconds with 5 years of data on a recent iPhone | Planned |
 | N5 | Accessible: real controls with labels, 44px touch targets, 4.5:1 text contrast | Planned |
 | N6 | Lint and all tests pass in CI before every deploy | Planned |
