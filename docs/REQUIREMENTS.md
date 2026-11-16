@@ -78,8 +78,8 @@ Every requirement starts as **Planned**. The milestone column refers to the buil
 | E1 | The owner can add every asset and liability type in the Add entry picker, from the app or the sheet | M5a | Auto (round trip adds a PPF; script reads hand-typed rows and reports unknown types). Search in the picker: planned |
 | E2 | Each holding shows its value, how the value was found (calculated, price, EMI schedule, manual) and what is missing | M5a | Auto (valuation tests); Open for a hand check |
 | E3 | EPF shows employee, employer and VPF shares, interest by declared rate per year credited on 31 March, EPS kept out of net worth, and reconciliation with the passbook | M5 | Planned |
-| E4 | PPF, NSC, SCSS, KVP, PO MIS, Sukanya Samriddhi, FD and RD values are calculated from their rates and dates | M1, M5 | Auto (calculations, 11 tests). Screens planned |
-| E5 | Loans show outstanding principal, EMI, rate, EMIs left, interest paid, and handle rate changes and prepayments | M1, M5 | Auto (calculations, 6 tests). Screens planned |
+| E4 | PPF, NSC, SCSS, KVP, PO MIS, Sukanya Samriddhi, FD and RD values are calculated from their rates and dates | M1, M5a | Auto (calculations and valuation tests); shown on Portfolio |
+| E5 | Loans show outstanding principal, EMI, rate, EMIs left, interest paid, and handle rate changes and prepayments | M1, M5a | Outstanding and EMIs left shown on Portfolio (Auto). Rate changes and prepayments: calculated (Auto), entry screen planned |
 | E6 | Stocks, ETFs and SGBs are valued from daily prices; mutual funds from daily NAVs | M5b | Units × price built (M5a); automatic prices planned |
 | E7 | EMI and contribution emails update the matching loan or holding | M5 | Planned |
 | E8 | The owner can import a CAS statement PDF for mutual funds and demat holdings | M8 | Planned |
@@ -118,7 +118,8 @@ Every requirement starts as **Planned**. The milestone column refers to the buil
 
 | ID | Requirement | Milestone | Verified |
 |---|---|---|---|
-| I1 | Works fully in Safari on iPhone and iPad without being installed. Can also be added to the Home Screen, and installed from desktop Chrome | M0, M8 | Planned |
+| I1 | Works fully in Safari on iPhone and iPad without being installed. Can also be added to the Home Screen, and installed from desktop Chrome | M0, M8 | Live in the browser; Open for Home Screen on a real iPhone |
+| I7 | A new version reaches every open copy of the app without closing tabs | M5a | Built (service worker takes over at once; the app checks on returning to the foreground). Live check on the next deploy |
 | I2 | Opens and shows the last copy of the sheet with no connection | M4b | Built; Open for a hand check in airplane mode |
 | I5 | On iPad, uses the wider screen: a side bar, and list and detail side by side, in portrait, landscape and Split View | M5 | Planned |
 | I6 | If Safari has deleted the data on a device, everything comes back from the sheet after reconnecting | M4b | Built (the sheet is the copy to trust) |

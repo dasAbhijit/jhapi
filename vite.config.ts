@@ -28,8 +28,13 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // Only the app shell is cached. Data lives in the encrypted vault (IndexedDB), not in the service worker.
+        // Only the app shell is cached. Data comes from the sheet (and the copy in localStorage), never the service worker.
         navigateFallback: '/jhapi/index.html',
+        // A new version takes over at once, even if the open page is an old build that never asks it to.
+        // Without this, Safari can keep showing an old version until every Jhapi tab is closed.
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
       },
     }),
   ],
