@@ -26,6 +26,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - name: cloud/Code.gs matches its sources
+        run: npm run build:cloud && git diff --exit-code cloud/Code.gs
       - run: npm test
       - run: npm run build
       - run: cp dist/index.html dist/404.html # SPA fallback for GitHub Pages

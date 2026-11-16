@@ -1,5 +1,9 @@
 import { NavLink, Route, Routes } from 'react-router-dom'
+import Home from './pages/Home.tsx'
 import { Placeholder } from './pages/Placeholder.tsx'
+import Settings from './pages/Settings.tsx'
+import Transactions from './pages/Transactions.tsx'
+import TxnEdit from './pages/TxnEdit.tsx'
 
 const TABS = [
   { to: '/', label: 'Home', icon: 'M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z' },
@@ -13,10 +17,12 @@ export default function App() {
     <div className="shell">
       <main className="main">
         <Routes>
-          <Route path="/" element={<Placeholder title="Net worth" milestone="M5" />} />
-          <Route path="/transactions" element={<Placeholder title="Transactions" milestone="M4b" />} />
+          <Route path="/" element={<Home />} />
+          <Route path="/transactions" element={<Transactions />} />
+          <Route path="/transactions/new" element={<TxnEdit key="new" />} />
+          <Route path="/transactions/:id" element={<TxnEdit />} />
           <Route path="/portfolio" element={<Placeholder title="Portfolio" milestone="M5" />} />
-          <Route path="/settings" element={<Placeholder title="Devices & Security" milestone="M2–M3" />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Placeholder title="Not found" />} />
         </Routes>
       </main>

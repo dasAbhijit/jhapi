@@ -2,13 +2,13 @@
 
 Personal finance tracker in rupees: bank and card transactions read automatically from bank alert emails, every kind of asset and loan, net worth, goals and an AI outlook.
 
-**Live app:** https://dasabhijit.github.io/jhapi/ (early build: app skeleton and calculations; screens are being added)
+**Live app:** https://dasabhijit.github.io/jhapi/ (bank emails → your own Google Sheet → this app; holdings and goals are next)
 
-**Status:** M0 and M1 done. See the build plan in [docs/DESIGN.md](docs/DESIGN.md#10-build-plan).
+**Status:** M0, M1 and M4 (email reading and two-way sheet sync) are built and tested. See the build plan in [docs/DESIGN.md](docs/DESIGN.md#10-build-plan).
 
 - **Requirements:** [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)
 - **Design and build plan:** [docs/DESIGN.md](docs/DESIGN.md)
-- **Owner setup (Google Cloud, Gemini, Inbox sheet):** [docs/admin/setup.md](docs/admin/setup.md)
+- **Owner setup (Jhapi's sheet and script, connecting devices):** [docs/admin/setup.md](docs/admin/setup.md)
 - **Screen mockups:** [design canvas](https://claude.ai/artifact/UNS95CTG4QsjUPiycrECjM) (private)
 
 Made for iPhone and iPad, in Safari.
@@ -22,6 +22,7 @@ npm test
 npm run lint
 npm run build
 npm run icons    # rebuild PNG icons from public/favicon.svg (macOS)
+npm run build:cloud  # rebuild cloud/Code.gs after changing parsers, src/core or cloud/main.js
 ```
 
 `samples/` holds real emails for building the parsers. It is git-ignored and must never be committed.
@@ -29,13 +30,16 @@ npm run icons    # rebuild PNG icons from public/favicon.svg (macOS)
 ## Layout
 
 ```
-src/core/       money, dates and calculators: EPF/PPF/SSY, deposits, loans, goals, market (pure, tested)
-src/pages/      screens
-public/         icons (favicon.svg is the source)
-scripts/        helper scripts
-docs/           design, requirements, and later the user guide (synced to GitBook)
+src/core/          money, dates, calculators, records, sheet layout, DKIM check (pure, tested)
+src/core/parsers/  bank email parsers (shared with the script)
+src/cloud/         what the script bundles, plus a fake of Google's services for tests
+src/data/          sheet client, device storage, sync store, summaries
+src/pages/, src/ui/ screens
+cloud/main.js      the Apps Script, by hand
+cloud/Code.gs      GENERATED: npm run build:cloud (bundled parsers + main.js); paste into the sheet
+docs/              design, requirements, owner setup
 ```
 
 ## Stack
 
-React, TypeScript and Vite as an installable PWA on GitHub Pages, set up the same way as [Bhag](../bhag). No database server: data is encrypted on each device and backed up, encrypted, to the owner's Google Drive. A Google Apps Script in the owner's Gmail puts bank alerts into a Google Sheet that the app reads.
+React, TypeScript and Vite as a PWA on GitHub Pages, set up like [Bhag](../bhag). Data lives in **Jhapi's own Google Sheet**. Its own Apps Script reads bank alert emails every 10 minutes (read-only, DKIM-checked) and answers the app as a web app protected by a secret code. The app pulls on every open and pushes edits back. Encryption on the device comes later.

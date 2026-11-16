@@ -2,7 +2,7 @@
 
 A personal finance tracker for Indian money: bank and card transactions read automatically from bank alert emails, plus every kind of asset and loan (EPF, PPF, NPS, mutual funds, stocks, FDs, gold, property, home loan), goals with forecasts, and an AI outlook. Amounts are in rupees (₹). See [Requirements](REQUIREMENTS.md) for what it must do and how each item will be checked.
 
-**Status:** M0 (skeleton) and M1 (calculations) are built, tested and live at https://dasabhijit.github.io/jhapi/. Progress is tracked in section 10.
+**Status:** M0, M1 and the email-to-sheet pipeline (M4) are built and tested; the app is live at https://dasabhijit.github.io/jhapi/. See section 10.
 
 Jhapi (ঝাঁপি) is short for *Lokkhir Jhapi*, the small pot of savings kept in many Bengali homes.
 
@@ -13,146 +13,114 @@ Screen mockups are on the [design canvas](https://claude.ai/artifact/UNS95CTG4Qs
 | Topic | Decision | Why |
 |---|---|---|
 | App hosting | GitHub Pages at `https://dasabhijit.github.io/jhapi/`, deployed by GitHub Actions on every push to `main`. Same setup as Bhag | Free, static, sits with the code |
-| Repo | `dasAbhijit/jhapi`, public | GitHub Pages on a free account needs a public repo. No data or keys ever live in the repo |
-| Client | React, TypeScript, Vite, installable PWA. Tooling copied from Bhag (oxlint, vitest, `vite-plugin-pwa`) | One codebase for iPhone, Android and desktop |
-| Main devices | **iPhone and iPad, in Safari** (mostly in the browser, not installed). Mac Chrome now and then. iOS Safari is the browser every feature is built and tested against first | The owner said so. Shapes storage, layout and unlock (section 5 and section 9) |
-| Where data lives | **Encrypted on each device** (IndexedDB), with an **encrypted backup and sync in the owner's Google Drive** (`appDataFolder`). No database server | Financial data never sits readable on any server. Google stores only ciphertext |
-| Reading email | A **Google Apps Script** in the owner's own Google account checks Gmail every 10 minutes and puts new bank alerts into an "Inbox" Google Sheet. The app reads and clears that sheet | Runs while the app is closed. Avoids Gmail's restricted OAuth scope, which would need Google's security review |
-| Google scopes in the app | `drive.appdata` (backup) and `drive.file` (only the Inbox sheet the owner picks). Both are non-sensitive | No Google verification needed |
-| Parsing | Bank email parsers live in the app (`src/core/parsers`), not in the script, and are tested in CI against saved real emails | A parser fix ships with a normal deploy; the script rarely changes |
-| AI | Google Gemini with the owner's own API key, stored inside the encrypted vault. Used for unparsed emails (owner confirms) and the AI Outlook | Same approach as Bhag's invoice scanning. No shared key to pay for |
-| Prices | Stocks, ETFs and SGBs through `GOOGLEFINANCE` formulas in a "Prices" tab of the same sheet. Mutual fund NAVs fetched daily by the script from AMFI | Free and needs no server (the browser cannot call AMFI or NSE directly because of CORS) |
-| Currency | INR only, integer paise, Indian grouping (12,34,567.89). Financial year April to March | |
+| Repo | `dasAbhijit/jhapi`, public | GitHub Pages on a free account needs a public repo. No data, secrets or real emails ever live in the repo |
+| Client | React, TypeScript, Vite, installable PWA. Tooling copied from Bhag (oxlint, vitest, `vite-plugin-pwa`) | One codebase for iPhone, iPad and desktop |
+| Main devices | **iPhone and iPad, in Safari** (mostly in the browser, not installed). Mac Chrome now and then. iOS Safari is the browser every feature is built and tested against first | The owner said so. Shapes storage, layout and unlock (sections 5 and 9) |
+| **Where data lives** | **Jhapi's own Google Sheet**, in the owner's Google account and shared with nobody. The app keeps a copy on the device so it opens instantly and works offline | The owner's choice (17 Nov 2026), like the Pahadi Soul app. The owner can read, sort and edit the data in the sheet directly |
+| **Separation** | Jhapi has **its own sheet and its own Apps Script**. Nothing is shared with Pahadi Soul or any other app: not the sheet, script, web app URL, secret code or triggers | The owner's rule: "absolutely no overlap" |
+| Reading email | Jhapi's script runs **every 10 minutes** in the owner's Google account. It reads only allow-listed bank senders (Gmail read-only), checks each email's DKIM signature, parses it, and writes rows into the sheet | Works while the app is closed. Gmail access stays inside the owner's own account |
+| One parser, two places | The parsers are written once in TypeScript (`src/core/parsers`), tested in CI, and **bundled into the script** (`cloud/Code.gs`, built by `npm run build:cloud`). CI fails if the committed `Code.gs` is out of date | The script and the app can never disagree about what an email means |
+| Sync | The script is also a **web app**. The app calls it with a secret code: `pull` returns everything, `push` sends changed rows. Merge is **row by row, newer edit wins** (the `Updated` column). Edits typed into the sheet are stamped by an `onEdit` trigger, so they flow back to the app | Two-way: email → sheet → app, app → sheet, and sheet edits → app |
+| When the app syncs | On every open, when it comes back to the foreground after a minute, when it goes back online, after every edit, and on **Sync now**. **Read bank emails now** asks the script to run at once | The owner asked for a fetch on every open |
+| Encryption | **Later.** For now the data is in the owner's private sheet and in the browser's storage on the owner's devices | The owner's call: get the flow working first |
+| AI | Google Gemini with the owner's own API key, for unparsed emails (owner confirms) and the AI Outlook. Later | Same approach as Bhag's invoice scanning |
+| Currency | INR only, integer paise in the app, rupees in the sheet. Financial year April to March | |
 | Accessibility | Real buttons, links and labels, 44px touch targets, 4.5:1 contrast | |
 
-### Rejected: Supabase, as in Bhag
+### Rejected
 
-Simpler sync, but the finance data would be readable in the database, and pulling Gmail from a server needs a stored Gmail token and Google's restricted-scope review.
+- **Supabase, as in Bhag:** the finance data would sit in a database the owner does not control as directly, and pulling Gmail from a server needs a stored Gmail token.
+- **Encrypted vault with Drive sync (the first plan):** postponed by the owner. Encryption on the device returns in M8.
 
 ## 2. Architecture
 
 ```
-Gmail ──► Apps Script (owner's Google account, time trigger every 10 min)
-            │  1. finds alerts from allow-listed bank senders
-            │  2. checks DKIM / sender domain → OK or BLOCKED
-            │  3. appends plain text of the email as a row
-            ▼
-          "Inbox" Google Sheet ── tabs: Inbox, Senders, Prices, Log
-            │
-            │  Sheets API (drive.file)
-            ▼
-Phone / Mac PWA (GitHub Pages)
-   │  parses rows (src/core/parsers) → VERIFIED or NOT PARSED
-   │  stores everything in the encrypted vault (IndexedDB)
-   │
-   ├──► Google Drive appDataFolder: encrypted change logs and snapshots (backup + sync)
-   └──► Gemini (owner's key): parse fallback, AI Outlook
+Gmail (owner's account)
+   │ read-only, allow-listed bank senders only
+   ▼
+Jhapi Apps Script (bound to Jhapi's own sheet)
+   │ every 10 min: DKIM check → JhapiCore.parseEmail → new rows
+   │ web app: doPost {token, action: ping | pull | push | readInbox}
+   │ onEdit: stamps ID + Updated on rows typed by hand
+   ▼
+Jhapi Google Sheet ── tabs: Transactions, Statements, Review, Log
+   ▲
+   │ HTTPS POST (text/plain, no CORS preflight), secret code in the body
+   ▼
+Jhapi PWA (GitHub Pages) on iPhone / iPad / Mac
+   localStorage: connection, last copy of the sheet, unsent changes
 ```
-
-The app shell is cached for offline start-up. The vault works offline. Email import, prices, sync and AI need a connection.
 
 ## 3. Email pipeline
 
-### 3.1 Setup (once)
+### 3.1 Script run (every 10 minutes, `readInbox`)
 
-1. The owner opens a link to a template Google Sheet and makes a copy. The copy includes the bound Apps Script.
-2. The owner opens Extensions › Apps Script › Run `setup` once and approves the permissions (Gmail read and label, the sheet, external fetch for AMFI). This installs the 10-minute trigger.
-3. In the app, the owner picks that sheet with the Google Picker. This gives the app `drive.file` access to that one file only.
+1. Search Gmail: `from:(<every allow-listed address>) after:<last run − 1 day>` (first run: the last 60 days, set by the `JHAPI_BACKFILL_DAYS` script property).
+2. Read **every message in every thread**: Gmail groups alerts with the same subject into one thread.
+3. Skip any Gmail message id already in the sheet.
+4. **Sender check** (`src/core/dkim.ts`): the `From` address must be at the bank's domain, and Gmail's own `Authentication-Results: mx.google.com` header must show `dkim=pass` for that domain or a subdomain. Results headers written by anyone else are ignored. A failure goes to **Review** as **Blocked**, with the subject only (the text of a possible phishing email is not stored), and never touches the books.
+5. **Parse** with `JhapiCore.parseEmail`:
+   - a transaction becomes a row in **Transactions**, status **Verified**, or **Receipt** for copies such as PhonePe and YONO;
+   - a card statement becomes a row in **Statements** (one per card and due date);
+   - an email the parsers do not recognise goes to **Review** as **Not parsed**, with its text so it can be entered by hand;
+   - notices and offers are ignored.
+6. A second alert for the same money (same account, amount, direction and reference) is skipped as a duplicate.
+7. At most 200 emails per run; the next run carries on from where this one stopped.
+8. A summary line goes to the **Log** tab. The script never labels, moves or changes any email.
 
-### 3.2 Script run (every 10 minutes)
+### 3.2 Parsers (`src/core/parsers`)
 
-1. Build a Gmail query from the **Senders** tab: `from:(alerts@hdfcbank.net OR …) -label:ft-done newer_than:3d`.
-2. For each message, read the raw message (`getRawContent`) and check the `Authentication-Results` header added by Google:
-   - `dkim=pass` with `header.d` equal to the sender's expected domain from the Senders tab, and
-   - the `From` address domain matches that same domain.
-   - Otherwise the row is written with status `BLOCKED` and reason (for example "sender failed bank signature check").
-3. Write one row: `messageId, receivedAt, from, subject, bankKey, status (OK|BLOCKED), reason, bodyText, imported`. `bodyText` is the HTML converted to plain text, trimmed to 20,000 characters.
-4. Skip any `messageId` already in the sheet. Apply the Gmail label `ft-done`.
-5. Use `LockService` so overlapping runs cannot write twice.
-6. Purge rows marked `imported` that are older than one day.
-7. Once a day: refresh mutual fund NAVs from AMFI `NAVAll.txt` into Prices for the ISINs listed there.
-8. Errors go to the **Log** tab, which the app shows on the Devices & Security screen.
+- One module per bank: `axis.ts`, `icici.ts`, and `others.ts` (SBI, DBS, PhonePe, Amazon Pay, CRED). The allow-list and each sender's DKIM domain live in `index.ts`.
+- The email text is flattened first (link targets, table pipes and extra spaces removed), so the two layouts Axis uses read the same.
+- Each email gives one result: a transaction, a statement, ignore (with a reason), or not parsed (with a reason).
+- Templates covered: see `samples/senders.md` (local only) and the tests. Banks that only send SMS for some kinds of transaction (ICICI and SBI savings UPI, DBS credits) are entered by hand.
+- **Tests:**
+  - `parsers.test.ts` uses synthetic emails that copy each real layout with made-up values.
+  - `samples.local.test.ts` runs the owner's real emails from the git-ignored `samples/` folder, on the owner's machine only, and prints no values.
 
-### 3.3 App import (when the app opens, and on pull-to-refresh)
+### 3.3 Duplicates, transfers and categories
 
-1. Read Inbox rows where `imported` is empty.
-2. `BLOCKED` rows are shown in Needs review with the reason. They never touch balances. The owner can only discard them.
-3. `OK` rows go through the parser for their `bankKey`. A match gives a transaction with status `VERIFIED` (owner can still edit the category). No match gives `NOT PARSED`, shown with the subject, with **Enter manually**, **Parse with Gemini** (result shown for confirmation, never saved without it) and **Ignore**.
-4. Write the transactions to the vault, then mark the rows `imported`.
+- **Receipts:** PhonePe, YONO, the second DBS email and ICICI standing-instruction notes repeat a bank alert. They are kept as **Receipt** rows (hidden unless "Show receipts" is on) and never counted. They carry the bank's reference number, so a later version can merge their better merchant names into the bank's row.
+- **Transfers:** card bill payments and transfers between the owner's own accounts get the category **Transfer**, which is left out of spending. Investments and refunds are also left out of the month's spending.
+- **Categories:** seed rules in `src/core/records.ts` (Swiggy → Food, BESCOM → Bills, and so on). The owner can change any category in the app or the sheet.
 
-### 3.4 Parsers (`src/core/parsers`)
+## 4. Security and privacy
 
-- One module per bank. Each has a list of templates (card spend, UPI debit, UPI credit, NEFT/IMPS, ATM, EMI debit, salary credit, card statement summary). Each template is a set of regular expressions that extract amount, debit or credit, account or card last 4, merchant or counterparty, date and time, and reference number.
-- Every template has fixture emails under `src/core/parsers/fixtures/<bank>/` (with personal details replaced), and a test that checks the exact fields.
-- A parse is only accepted if amount, direction, account and date are all found.
-- Email text is untrusted data. It is never used as instructions, including when sent to Gemini.
+- **The sheet** is private to the owner's Google account. The script runs as the owner and reads Gmail read-only (`cloud/appsscript.json` limits it to `gmail.readonly`, `spreadsheets.currentonly`, triggers and the sheet's menu).
+- **The web app** is deployed "execute as me, anyone can call", because the app on GitHub Pages cannot carry a Google login. Every call must include the **secret code**: 64 random hex characters made by **Jhapi > Set up**, kept in Script properties (never in a sheet cell), checked in constant time. Without it the web app answers nothing except "wrong secret code".
+- **The app** accepts only a `https://script.google.com/macros/s/…/exec` address, so the code is never sent anywhere else.
+- **On the device:** the connection (URL and code), the last copy of the sheet and unsent changes are in `localStorage`. **Disconnect this device** removes all of it. Encryption with a passphrase or passkey (the first plan's vault) is a later milestone.
+- **Never in the repo:** real emails (`samples/` is git-ignored), the secret code, the web app URL.
+- **Pushes are checked first:** a request with any bad record (amount, date, type, timestamps, field lengths) is refused whole, so a bad request changes nothing.
 
-### 3.5 Duplicates, transfers and categories
+## 5. Sync between the app and the sheet
 
-- **Duplicates:** the same `messageId` is never imported twice. Two different emails with the same account, amount, direction and reference number are flagged as a likely duplicate for review.
-- **Transfers:** a debit from one of the owner's accounts and a credit to another (including a credit card bill payment) with the same amount within 3 days are paired and marked `transfer`. Transfers are left out of spending and income.
-- **Categories:** a seed list of merchant rules (Swiggy → Food, BESCOM → Utilities). When the owner changes a category, they can choose to apply it to that merchant from now on.
+- **Pull** (every open, foreground after a minute, back online, Sync now): the script reads all three tabs. Rows typed by hand get an ID and an `Updated` time and are rewritten in the standard layout. Rows it cannot read (no usable date or amount) are listed as problems in Settings and left alone.
+- **Push** (after every edit in the app): the app sends only changed rows, each with a new `Updated` time. For each row:
+  - not in the sheet: added;
+  - in the sheet with an older `Updated`: replaced;
+  - in the sheet with a **newer** `Updated` (edited in the sheet since): **the sheet wins**, and the app says so.
+- **Offline:** edits wait in a queue on the device and go with the next successful sync. The screens show the sheet's copy with the queued edits on top.
+- **Deleting** marks the row `Deleted = TRUE`, so the deletion syncs too. The owner can clear deleted rows from the sheet whenever they like.
+- **Hand edits in the sheet:** the `onEdit` trigger stamps `Updated` (and an `ID` for new rows) on every edited row, so the next pull carries them to the app.
+- **Safari storage:** Safari may clear a site's storage after 7 days without a visit. The sheet is the copy to trust, so the next open just pulls everything again (only the connection needs re-entering).
 
-## 4. Vault and security
+## 6. The sheet (data model)
 
-- **Data key:** a random 256-bit AES-GCM key encrypts every record. Each record is stored as `{id, iv, ciphertext}`. Record type and timestamps are inside the ciphertext.
-- **Unlocking:** the data key is stored wrapped (AES-KW) three ways:
-  - by the **passphrase**: PBKDF2-SHA256, 600,000 iterations, random salt;
-  - by a **passkey**, through the WebAuthn PRF extension, where supported (iOS/Safari 18+, recent Chrome). Optional;
-  - by a **recovery key**: 24 random words shown once, for the owner to keep offline.
-- **Two steps to open** (Unlock screen): Google sign-in (needed for sync and the sheet), then unlock on this device. The vault can also be unlocked offline.
-- **Auto-lock** after an idle time the owner chooses (default 5 minutes), and on **Lock now**. Locking drops the data key from memory.
-- **Secrets:** the Gemini key is stored inside the vault. The only public values in the build are the Google OAuth client ID and API key for the Picker, both restricted to the Pages origin.
-- **Changing the passphrase** re-wraps the data key only; records are not re-encrypted.
-- **Lost everything:** without the passphrase, a passkey or the recovery key, the data cannot be recovered. The app says this plainly at setup.
+Amounts are **rupees** in the sheet and integer **paise** in the app. Dates are `YYYY-MM-DD`; hand-typed dates such as `16/11/2026` are understood. ID, date, time, account, reference and timestamp columns are formatted as plain text so Sheets does not change them.
 
-## 5. Sync between devices (Drive `appDataFolder`)
+**Transactions:** `ID`, `Date`, `Time`, `Account`, `Type` (Debit/Credit), `Amount`, `Counterparty`, `Category`, `Channel`, `Reference`, `Balance`, `Status` (Verified, Manual, Receipt, Review, Ignored), `Source` (Email, App, Sheet), `Note`, `Email ID`, `Template`, `Updated`, `Deleted`.
 
-- Each device has a random `deviceId` and name ("Chrome on Mac").
-- Every change is a record version stamped with a **hybrid logical clock** (time + counter + deviceId).
-- Each device uploads its changes as encrypted batch files `log/<deviceId>/<seq>.enc`, and reads new batches from other devices when the app opens or comes to the foreground.
-- **Merge rule:** for each record, the version with the highest clock wins. Deletes are tombstones.
-- **Compaction:** when there are more than 200 batch files, a device writes `snapshot.enc` holding the full state and the last sequence seen per device, then deletes the batches it covers.
-- **Devices list** comes from the batch files and each device's last-seen time. **Remove** stops listing a device; it does not wipe it remotely.
-- **Safari in the browser (not installed):**
-  - Safari deletes a site's stored data after 7 days of using Safari without opening that site. Opening Jhapi every few days keeps it; if it is deleted, the app restores from Drive after unlocking. **Drive is the copy to trust; the device is a cache.**
-  - The app calls `navigator.storage.persist()` and shows a short tip that adding Jhapi to the Home Screen stops Safari deleting its data. It never blocks use in the browser.
-  - iPhone and iPad each count as a separate device with their own data on this device. Safari's private browsing keeps nothing, so the app warns there.
-- **Unlock on iPhone and iPad:** passkeys come from iCloud Keychain with Face ID or Touch ID. The PRF extension needed to unlock the vault with a passkey works in Safari on iOS and iPadOS 18 and later. Earlier versions fall back to the passphrase.
-- **Google sign-in in Safari** opens as a pop-up, so it is only started from a tap, never automatically.
+- `Account` is a key such as `axis-bank-1111`, `icici-credit_card-4444` or `amazonpay-wallet`; the app shows it as "Axis Bank ••1111". Hand-added rows can use any name, such as `Cash`.
+- Only **Verified** and **Manual** rows count towards spending and balances.
 
-## 6. Data model (records inside the vault)
+**Statements:** `ID`, `Account`, `Total due`, `Minimum due`, `Due date`, `Email ID`, `Updated`.
 
-Money is **integer paise**. Dates are `YYYY-MM-DD`.
+**Review:** `ID`, `Received`, `From`, `Subject`, `Status` (Not parsed, Blocked), `Reason`, `Text`, `Email ID`, `Updated`, `Resolved`.
 
-```
-account(id, kind: bank|card|wallet, institution, name, last4, active)
-transaction(id, accountId, amountPaise (+ credit / − debit), date, time,
-            merchant, description, category, status: verified|manual|not_parsed|blocked|ignored,
-            source: email|manual|gemini|cas, gmailMessageId, reference,
-            transferPairId, duplicateOf, note)
-merchantRule(id, pattern, category)
-holding(id, side: asset|liability, type, name, institution,
-        ids {isin, ticker, uan, folio, accountNo},
-        valuation: auto|cas|calc|manual,
-        units, investedPaise, manualValuePaise, manualValueDate,
-        params {ratePct, startDate, maturityDate, compounding, tenureMonths, ...},
-        goalTags [{goalId, pct}], closed)
-holdingEvent(id, holdingId, date, kind: contribution|withdrawal|interest|rate_change|
-             prepayment|emi|valuation|units, amountPaise, units, ratePct, note)
-declaredRate(scheme: epf|ppf|ssy|nsc|scss|kvp|po_mis, fy, ratePct)
-price(key: isin|ticker, date, pricePaise)
-netWorthSnapshot(date, totalPaise, byClass {retirement, market, deposits, gold_other, liabilities})
-goal(id, name, targetTodayPaise, targetYear, inflationPct, plannedSipPaise,
-     returnOverrides, glidePath)
-outlook(id, generatedAt, horizon, portfolio {medianPaise, p10Paise, p90Paise},
-        assets [{class, medianPaise, p10Paise, p90Paise, baseline, adjusted, drivers[]}],
-        checkedAt, landedInRange)
-device(id, name, lastSeen)
-settings(autoLockMinutes, inboxSheetId, geminiKey, geminiModel, baselineReturns, ...)
-```
+**Log:** `Time`, `Event` (the last 500 lines).
 
-The asset and liability `type` values are the ones in the Add Entry picker: EPF/VPF, PPF, NPS I/II, gratuity, superannuation, mutual fund, stock, ETF, REIT/InvIT, SGB, government bond, corporate bond, unlisted shares, ESOP/RSU, US stocks, PMS/AIF, FD, RD, corporate FD, NSC, KVP, SCSS, PO MIS, Sukanya Samriddhi, physical gold/silver, digital gold, bank account, cash/wallet, property, ULIP, endowment, crypto, P2P, chit fund, money lent, and loans (home, car, personal, education, gold, against property, against securities), credit card, BNPL, money borrowed.
+Holdings, goals and outlooks (M5–M7) will get their own tabs in the same style.
 
 ## 7. Core logic (`src/core`)
 
@@ -182,53 +150,53 @@ Pure functions with no UI or network code, covered by unit and randomized tests,
 Built for **iPhone and iPad in Safari**. Phone layout uses the 390px design width from the design canvas.
 
 - **iPhone** (under 700px wide): one column, bottom tab bar, safe-area padding for the home indicator.
-- **iPad** (700px and wider, portrait and landscape, including Split View): a side bar instead of the bottom tabs, and two columns where it helps: list and detail side by side for Transactions and Portfolio, and Dashboard cards in a grid. The iPad layout is built in M5 alongside the screens, not left for later.
+- **iPad** (700px and wider, portrait and landscape, including Split View): a side bar instead of the bottom tabs, and two columns where it helps: list and detail side by side for Transactions and Portfolio, and Dashboard cards in a grid. Today the side bar and the two-column Home grid are built; list-and-detail side by side comes with M5.
 - Touch first: 44px targets, no hover-only controls, inputs at 16px or larger so Safari does not zoom in, and the right keyboards (`inputmode="decimal"` for amounts).
 - Works with the iPad keyboard and trackpad, and with Dynamic Type sizes.
 
 | Screen | What it shows |
 |---|---|
-| Unlock | Google sign-in, then passkey or passphrase, recovery key link |
-| Dashboard | Net worth, change and chart for the chosen range, needs-review banner, allocation, this month's spending, recent transactions |
-| Transactions | All / Needs review tabs. Verified, not parsed and blocked items with their actions. Add manual transaction |
+| Home ✅ (first cut) | This month's spending and money received, needs-review banner, card bills due, spending by category, accounts with the latest balance a bank email gave, recent transactions. Net worth and the time-range chart come with M5 |
+| Transactions ✅ | All / Needs review tabs, search, "show receipts", grouped by day. Needs review lists Not parsed and Blocked emails with **Add by hand**, **Mark done** and **Read bank emails now** |
+| Add / edit transaction ✅ | Money out/in, amount, date, payee, category, account, note, "do not count", delete |
+| Settings ✅ | Connect the sheet (web app URL and secret code), last sync and last email run, rows the sheet could not read, Sync now, Read bank emails now, Disconnect this device |
+| Unlock (M8) | Passkey or passphrase when encryption arrives |
 | Portfolio | Net worth and liquid amount, holdings grouped by class with source badge (AUTO, CAS, CALC, MANUAL) and value date, + Add entry |
 | Add entry | Search and type picker, CAS import |
 | EPF, Loan, other holding detail | Balance, breakdown, rates by year, events, the matching actions |
 | Goals | On track / behind counts, SIP gap, a card per goal |
 | Goal detail | Cost today and at target year, funded %, SIP needed, forecast band, tagged holdings |
 | AI Outlook and asset detail | Portfolio and per-class ranges, assumption changes, drivers, track record |
-| Devices & Security | Sync status, devices, passkey, auto-lock, recovery key, passphrase, Inbox sheet status and script log, Gemini key, Lock now |
 
 ## 10. Build plan
 
+Re-planned on 17 Nov 2026 when the owner chose the Google Sheet as the store.
+
 | # | Scope | Done when |
 |---|---|---|
-| M0 ✅ | Repo scaffold copied from Bhag: Vite, React, PWA, oxlint, vitest, `deploy.yml` (no Supabase variables), new `base` path, design tokens from the canvas | Empty app is live on Pages and CI is green |
+| M0 ✅ | Repo scaffold copied from Bhag: Vite, React, PWA, oxlint, vitest, `deploy.yml`, new `base` path, design tokens from the canvas | Empty app is live on Pages and CI is green |
 | M1 ✅ | `src/core`: money, FY, all calculators in section 7 (1–5, 7), with tests | Tests match hand-checked figures: ₹43,391 EMI on ₹50L at 8.5% for 20 years, NSC ₹1,000 → ₹1,449, PPF 5th-of-month rule, EPF month-end rule, ₹25L at 6% for 10 years → ₹44.77L |
-| M4a | **Pulled forward:** Apps Script, template sheet, parsers for the owner's banks with fixtures | A month of the owner's real alerts parses with nothing missed |
-| M2 | Vault: encryption, IndexedDB, Unlock screen, passkey, passphrase, recovery key, auto-lock | Survives reload, locks on time, wrong passphrase is refused |
-| M3 | Google sign-in, Picker, Drive backup and sync, devices list | An edit on the phone shows up on the Mac and the other way round |
-| M4b | App import, Transactions and review screens, transfers, duplicates, categories, Gemini fallback | Needs-review flow works end to end on real mail |
-| M5 | Portfolio, Add entry, holding detail screens, prices, net worth snapshots, Dashboard | Dashboard matches the sum of the owner's accounts |
+| M4a ✅ | Parsers for Axis, ICICI, SBI, DBS, PhonePe and Amazon Pay; allow-list; synthetic tests and local real-sample tests | All 57 real samples give the expected result |
+| M4b ✅ | Jhapi's own Apps Script (email reader with DKIM check, web app, onEdit), sheet layout, app sync (pull on open, push on edit, offline queue), Home, Transactions, Needs review, Add/edit, Settings | Script tests on fake Google pass, the app ↔ script round-trip test passes, deployed |
+| M4c | Live on the owner's sheet: first real run, then fix whatever real mail shows. Merge receipts into bank rows; spot transfers between own accounts; owner's own category rules | A week of real mail reads with nothing missed |
+| M5 | Portfolio: holdings tab in the sheet, Add entry, EPF/PPF/FD/loan detail using the M1 calculators, prices, net worth snapshots, Dashboard | Dashboard matches the sum of the owner's accounts |
 | M6 | Goals, goal tagging, forecast worker | Goal detail matches the design |
-| M7 | AI Outlook and track record | Outlook screens work with a real key |
-| M8 | CAS PDF import (password-protected, read in the browser with pdf.js), CSV export, user guide in `docs/` synced to GitBook, install polish | Installed on the owner's phone and in daily use |
-
-M4a comes straight after M1 because email parsing is the riskiest part.
+| M7 | AI Outlook and Gemini fallback for unparsed emails | Outlook screens work with a real key |
+| M8 | Encryption on the device (passphrase or passkey), CAS PDF import, CSV export, user guide in `docs/` synced to GitBook | Installed on the owner's phone and in daily use |
 
 ## 11. Risks
 
 | Risk | Handling |
 |---|---|
-| Some banks send UPI alerts by SMS only | Check each bank in M4a. Manual entry covers the gap |
+| Some banks send UPI alerts by SMS only | Found: ICICI and SBI savings UPI/ATM/NEFT, DBS credits. Add by hand in the app or the sheet |
 | A bank changes its email layout | Fixtures and tests catch it. The email lands in Not parsed, never lost |
 | Phishing email that looks like a bank | DKIM and sender-domain check; BLOCKED items never touch balances |
-| Safari deletes website data after 7 days without a visit | Drive is the copy to trust and the app restores from it after unlock. Adding to the Home Screen is suggested, not required |
-| Lost passphrase and recovery key | Data cannot be recovered. Said clearly at setup |
+| Safari deletes website data after 7 days without a visit | The sheet is the copy to trust; the next open pulls everything again. Only the connection needs re-entering |
 | Apps Script quotas | One person's bank mail is far below Gmail read limits |
-| Inbox sheet holds email text in plain form | It is the owner's own Google account, which already holds the same emails. Rows are deleted a day after import |
-| Prices tab shows which tickers the owner holds | Same account as above. Holdings amounts are never written there |
+| The sheet holds transactions and unparsed email text in plain form | It is the owner's own Google account, which already holds the same emails. Encryption is planned (M8) |
+| The web app answers anyone who has the URL and code | 64-character random code, constant-time check, never in the repo or the sheet; Disconnect removes it from a device; a new code can be made in Script properties |
+| Script and app disagree about an email | The script runs the app's own bundled parsers; CI fails if `Code.gs` is stale |
 
 ## 12. Open questions
 
-1. Banks and cards to support first, with one sample alert of each kind. (Being collected into the git-ignored `samples/` folder.)
+1. Samples still to collect: HDFC, Kotak, NPS, EPF, insurance, salary slips, CAS.
