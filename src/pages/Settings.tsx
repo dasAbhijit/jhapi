@@ -66,7 +66,7 @@ export default function Settings() {
         ) : (
           <form className="stack" onSubmit={submit}>
             <p className="muted">
-              Paste the web app URL and secret code from your Jhapi sheet. First time? Follow the <a href={GUIDE} target="_blank" rel="noreferrer">setup guide</a> (about 5 minutes on a laptop).
+              Paste the web app URL and secret code from your Jhapi sheet. First time? Follow the <a href={GUIDE} target="_blank" rel="noreferrer">setup guide</a> (about 10 minutes on a laptop).
             </p>
             <label className="field">
               <span>Web app URL</span>
