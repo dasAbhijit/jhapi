@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#16004d"/>
+  <!-- A jhapi: a round clay savings pot with a coin slot and a coin going in -->
+  <ellipse cx="256" cy="318" rx="150" ry="120" fill="#ece3fa"/>
+  <rect x="190" y="178" width="132" height="44" rx="14" fill="#ece3fa"/>
+  <rect x="172" y="168" width="168" height="26" rx="13" fill="#cfb9f2"/>
+  <rect x="216" y="262" width="80" height="16" rx="8" fill="#16004d"/>
+  <circle cx="256" cy="112" r="44" fill="#f2c46d"/>
+  <text x="256" y="128" text-anchor="middle" font-family="Arial, sans-serif" font-size="48" font-weight="700" fill="#6b4300">₹</text>
+</svg>
