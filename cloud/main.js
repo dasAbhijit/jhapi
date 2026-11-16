@@ -33,6 +33,7 @@ var TABS = [
   { name: J.STATEMENT_TAB, headers: J.STATEMENT_HEADERS },
   { name: J.REVIEW_TAB, headers: J.REVIEW_HEADERS },
   { name: J.RULES_TAB, headers: J.RULES_HEADERS },
+  { name: J.HOLDINGS_TAB, headers: J.HOLDING_HEADERS },
   { name: J.LOG_TAB, headers: ['Time', 'Event'] },
 ];
 
@@ -249,20 +250,67 @@ function loadStatements_() {
   return out;
 }
 
-/** The owner's category rules. Rows typed by hand get an ID and an Updated time. */
-function loadRules_() {
-  var tab = readTab_(J.RULES_TAB);
+/**
+ * A table synced row by row (Rules, Holdings): rows typed by hand get an ID and an Updated time and
+ * are rewritten in the standard layout. `fromRow` returns a record, or {problem} for a row it cannot read.
+ */
+function loadTable_(tabName, fromRow, toRow, problems) {
+  var tab = readTab_(tabName);
   var items = [];
   tab.rows.forEach(function (row, i) {
-    var r = J.rowToRule(row, tab.headers);
-    if (!r) return;
+    if (row.join('') === '') return;
+    var r = fromRow(row, tab.headers);
+    if (!r || r.problem) {
+      if (r && r.problem && problems) problems.push(tabName + ' row ' + (i + 2) + ': ' + r.problem);
+      return;
+    }
     var fix = false;
     if (!r.id) { r.id = Utilities.getUuid(); fix = true; }
     if (!r.updatedAt) { r.updatedAt = nowIso_(); fix = true; }
-    if (fix) writeRows_(tab.sheet, J.RULES_TAB, tab.headers, i + 2, [J.ruleToRow(r)]);
-    items.push({ rule: r, row: i + 2 });
+    if (fix) writeRows_(tab.sheet, tabName, tab.headers, i + 2, [toRow(r)]);
+    items.push({ rec: r, row: i + 2 });
   });
   return { tab: tab, items: items };
+}
+
+function ruleFromRow_(row, headers) {
+  return J.rowToRule(row, headers);
+}
+
+function holdingFromRow_(row, headers) {
+  var r = J.rowToHolding(row, headers);
+  return r.holding || (r.problem ? { problem: r.problem } : null);
+}
+
+function loadRules_(problems) {
+  return loadTable_(J.RULES_TAB, ruleFromRow_, J.ruleToRow, problems);
+}
+
+function loadHoldings_(problems) {
+  return loadTable_(J.HOLDINGS_TAB, holdingFromRow_, J.holdingToRow, problems);
+}
+
+/** Merge records from the app into a table: newer Updated wins. Returns how many rows changed. */
+function mergeTable_(tabName, state, incoming, toRow, rejected) {
+  var byId = {};
+  state.items.forEach(function (x) { byId[x.rec.id] = x; });
+  var appended = [];
+  var changed = 0;
+  incoming.forEach(function (rec) {
+    var cur = byId[rec.id];
+    if (cur && cur.rec.updatedAt > rec.updatedAt) { rejected.push(rec.id); return; }
+    if (cur && cur.rec.updatedAt === rec.updatedAt) return;
+    if (cur) {
+      writeRows_(state.tab.sheet, tabName, state.tab.headers, cur.row, [toRow(rec)]);
+      cur.rec = rec;
+    } else {
+      appended.push(toRow(rec));
+      byId[rec.id] = { rec: rec, row: -1 };
+    }
+    changed++;
+  });
+  appendRows_(tabName, appended);
+  return changed;
 }
 
 function pull_() {
@@ -275,7 +323,8 @@ function pull_() {
     transactions: t.items.map(function (x) { return x.txn; }),
     statements: loadStatements_(),
     review: loadReview_().items.map(function (x) { return x.item; }),
-    rules: loadRules_().items.map(function (x) { return x.rule; }),
+    rules: loadRules_(t.problems).items.map(function (x) { return x.rec; }),
+    holdings: loadHoldings_(t.problems).items.map(function (x) { return x.rec; }),
     problems: t.problems,
   };
 }
@@ -290,8 +339,21 @@ function validatePush_(body) {
   var txns = body.transactions || [];
   var review = body.review || [];
   var rules = body.rules || [];
-  if (!Array.isArray(txns) || !Array.isArray(review) || !Array.isArray(rules)) throw new Error('Bad request.');
-  if (txns.length + review.length + rules.length > MAX_RECORDS_PER_PUSH) throw new Error('Too many changes in one request.');
+  var holdings = body.holdings || [];
+  if (!Array.isArray(txns) || !Array.isArray(review) || !Array.isArray(rules) || !Array.isArray(holdings)) throw new Error('Bad request.');
+  if (txns.length + review.length + rules.length + holdings.length > MAX_RECORDS_PER_PUSH) throw new Error('Too many changes in one request.');
+  holdings.forEach(function (h, i) {
+    var where = 'Holding ' + (i + 1) + ': ';
+    if (!h || typeof h.id !== 'string' || !h.id || h.id.length > 100) throw new Error(where + 'bad id.');
+    if (!Object.prototype.hasOwnProperty.call(J.HOLDING_TYPES, h.type)) throw new Error(where + 'bad type.');
+    if (typeof h.deleted !== 'boolean' || typeof h.payout !== 'boolean' || !ISO_TIME.test(String(h.updatedAt))) throw new Error(where + 'bad record.');
+    ['name', 'institution', 'code', 'units', 'priceDate', 'valueDate', 'startDate', 'maturityDate', 'compounding', 'notes'].forEach(function (k) {
+      if (typeof h[k] !== 'string' || h[k].length > 2000) throw new Error(where + 'bad ' + k + '.');
+    });
+    ['pricePaise', 'investedPaise', 'valuePaise', 'ratePct', 'monthlyPaise', 'tenureMonths'].forEach(function (k) {
+      if (h[k] !== null && (typeof h[k] !== 'number' || !isFinite(h[k]) || Math.abs(h[k]) > 1e15)) throw new Error(where + 'bad ' + k + '.');
+    });
+  });
   rules.forEach(function (r, i) {
     var ok = r && typeof r.id === 'string' && r.id && r.id.length <= 100 &&
       typeof r.contains === 'string' && r.contains.trim() && r.contains.length <= 200 &&
@@ -364,20 +426,17 @@ function push_(body) {
     });
   });
 
-  var ruleState = loadRules_();
-  var rulesById = {};
-  ruleState.items.forEach(function (x) { rulesById[x.rule.id] = x; });
-  var newRules = [];
-  (body.rules || []).forEach(function (r) {
-    var rec = { id: r.id, contains: r.contains.trim(), category: r.category.trim(), updatedAt: r.updatedAt, deleted: r.deleted };
-    var cur = rulesById[rec.id];
-    if (cur && cur.rule.updatedAt > rec.updatedAt) { rejected.push(rec.id); return; }
-    if (cur && cur.rule.updatedAt === rec.updatedAt) return;
-    if (cur) writeRows_(ruleState.tab.sheet, J.RULES_TAB, ruleState.tab.headers, cur.row, [J.ruleToRow(rec)]);
-    else newRules.push(J.ruleToRow(rec));
-    changed++;
+  var cleanRules = (body.rules || []).map(function (r) {
+    return { id: r.id, contains: r.contains.trim(), category: r.category.trim(), updatedAt: r.updatedAt, deleted: r.deleted };
   });
-  appendRows_(J.RULES_TAB, newRules);
+  changed += mergeTable_(J.RULES_TAB, loadRules_(), cleanRules, J.ruleToRow, rejected);
+  var cleanHoldings = (body.holdings || []).map(function (h) {
+    var out = {};
+    ['id', 'type', 'name', 'institution', 'code', 'units', 'pricePaise', 'priceDate', 'investedPaise', 'valuePaise', 'valueDate', 'ratePct',
+      'startDate', 'maturityDate', 'compounding', 'payout', 'monthlyPaise', 'tenureMonths', 'notes', 'updatedAt', 'deleted'].forEach(function (k) { out[k] = h[k]; });
+    return out;
+  });
+  changed += mergeTable_(J.HOLDINGS_TAB, loadHoldings_(), cleanHoldings, J.holdingToRow, rejected);
 
   if (changed > 0) {
     bumpVersion_();
@@ -395,7 +454,7 @@ function onEdit(e) {
   if (!e || !e.range) return;
   var sheet = e.range.getSheet();
   var name = sheet.getName();
-  if (name !== J.TXN_TAB && name !== J.REVIEW_TAB && name !== J.STATEMENT_TAB && name !== J.RULES_TAB) return;
+  if ([J.TXN_TAB, J.REVIEW_TAB, J.STATEMENT_TAB, J.RULES_TAB, J.HOLDINGS_TAB].indexOf(name) < 0) return;
   var first = Math.max(2, e.range.getRow());
   var last = e.range.getRow() + e.range.getNumRows() - 1;
   if (last < first) return;
@@ -460,7 +519,7 @@ function readInboxLocked_() {
   loadReview_().items.forEach(function (x) { if (x.item.emailId) known[x.item.emailId] = true; });
   var statements = loadStatements_();
   statements.forEach(function (s) { if (s.emailId) known[s.emailId] = true; });
-  var rules = loadRules_().items.map(function (x) { return x.rule; });
+  var rules = loadRules_().items.map(function (x) { return x.rec; });
 
   var newTxns = [];
   var newStatements = [];

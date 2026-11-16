@@ -9,10 +9,12 @@ export function marketValue(units: string, pricePaise: Paise): Paise {
   const m = /^(\d+)(?:\.(\d{1,6}))?$/.exec(units.trim())
   if (!m) throw new Error(`Bad units: ${units}`)
   const frac = (m[2] ?? '').padEnd(6, '0')
-  const micro = BigInt(m[1]) * 1_000_000n + BigInt(frac) // units × 10^6
+  // BigInt() calls, not 123n literals, so the code also bundles for the Apps Script target.
+  const MICRO = BigInt(1_000_000)
+  const micro = BigInt(m[1]) * MICRO + BigInt(frac) // units × 10^6
   const v = micro * BigInt(pricePaise)
   // Round half up to whole paise.
-  return Number((v + 500_000n) / 1_000_000n)
+  return Number((v + BigInt(500_000)) / MICRO)
 }
 
 /** Gain and gain % against money invested. */

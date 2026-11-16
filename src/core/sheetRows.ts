@@ -9,6 +9,7 @@
 import { formatDate, parseDate } from './dates'
 import { looseDate } from './parsers/text'
 import type { ReviewItem, Rule, Statement, Txn, TxnSource, TxnStatus } from './records'
+import { HOLDING_TYPES, type Holding, type HoldingType } from './holdings'
 
 export type Cell = string | number | boolean | null
 
@@ -167,4 +168,71 @@ export function rowToRule(row: Cell[], headers: string[]): Rule | null {
   const category = str(get('Category'))
   if (!contains || !category) return null
   return { id: str(get('ID')), contains, category, updatedAt: str(get('Updated')), deleted: bool(get('Deleted')) }
+}
+
+// ---------- Holdings tab ----------
+
+export const HOLDINGS_TAB = 'Holdings'
+export const HOLDING_HEADERS = [
+  'ID', 'Name', 'Type', 'Institution', 'Code', 'Units', 'Price', 'Price date', 'Invested', 'Value', 'Value date', 'Rate %',
+  'Start', 'Maturity', 'Compounding', 'Payout', 'Monthly', 'Months', 'Notes', 'Updated', 'Deleted',
+] as const
+TEXT_COLUMNS[HOLDINGS_TAB] = ['ID', 'Code', 'Units', 'Price date', 'Value date', 'Start', 'Maturity', 'Updated']
+
+const COMPOUNDING = ['monthly', 'quarterly', 'half-yearly', 'yearly']
+
+export function holdingToRow(h: Holding): Cell[] {
+  return [
+    h.id, h.name, HOLDING_TYPES[h.type].label, h.institution, h.code, h.units, rupees(h.pricePaise), h.priceDate, rupees(h.investedPaise),
+    rupees(h.valuePaise), h.valueDate, h.ratePct ?? '', h.startDate, h.maturityDate, h.compounding, h.payout ? 'TRUE' : '',
+    rupees(h.monthlyPaise), h.tenureMonths ?? '', h.notes, h.updatedAt, h.deleted ? 'TRUE' : '',
+  ]
+}
+
+/** Type cells may hold the label ("PPF", "Mutual fund") or the key ("ppf", "mf"). */
+export function readHoldingType(c: Cell): HoldingType | null {
+  const s = str(c).toLowerCase()
+  const key = (Object.keys(HOLDING_TYPES) as HoldingType[]).find((k) => k === s || HOLDING_TYPES[k].label.toLowerCase() === s)
+  return key ?? null
+}
+
+function num(c: Cell): number | null {
+  if (c === null || c === '') return null
+  const n = typeof c === 'number' ? c : Number(String(c).replace(/[%,\s]/g, ''))
+  return Number.isFinite(n) ? n : null
+}
+
+export function rowToHolding(row: (Cell | Date)[], headers: string[]): { holding: Holding | null; problem?: string } {
+  const get = (h: string) => row[headers.indexOf(h)] as Cell
+  const raw = (h: string) => row[headers.indexOf(h)]
+  if (row.every((c) => c === '' || c === null)) return { holding: null }
+  const type = readHoldingType(get('Type'))
+  if (!type) return { holding: null, problem: `unknown Type "${str(get('Type'))}"` }
+  const comp = str(get('Compounding')).toLowerCase()
+  const months = num(get('Months'))
+  return {
+    holding: {
+      id: str(get('ID')),
+      type,
+      name: str(get('Name')) || HOLDING_TYPES[type].label,
+      institution: str(get('Institution')),
+      code: str(get('Code')),
+      units: str(get('Units')),
+      pricePaise: paiseFrom(get('Price')),
+      priceDate: readDate(raw('Price date')),
+      investedPaise: paiseFrom(get('Invested')),
+      valuePaise: paiseFrom(get('Value')),
+      valueDate: readDate(raw('Value date')),
+      ratePct: num(get('Rate %')),
+      startDate: readDate(raw('Start')),
+      maturityDate: readDate(raw('Maturity')),
+      compounding: (COMPOUNDING.includes(comp) ? comp : '') as Holding['compounding'],
+      payout: bool(get('Payout')),
+      monthlyPaise: paiseFrom(get('Monthly')),
+      tenureMonths: months === null ? null : Math.round(months),
+      notes: str(get('Notes')),
+      updatedAt: str(get('Updated')),
+      deleted: bool(get('Deleted')),
+    },
+  }
 }

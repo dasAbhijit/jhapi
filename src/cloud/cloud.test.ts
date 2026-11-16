@@ -30,7 +30,7 @@ describe('setup', () => {
   it('creates the tabs, a long secret code and one 10-minute trigger', () => {
     const { env, token } = ready()
     expect(token).toMatch(/^[0-9a-f]{64}$/)
-    expect(Object.keys(env.sheets).sort()).toEqual(['Log', 'Review', 'Rules', 'Statements', 'Transactions'])
+    expect(Object.keys(env.sheets).sort()).toEqual(['Holdings', 'Log', 'Review', 'Rules', 'Statements', 'Transactions'])
     expect(env.tab(TXN_TAB)[0]).toEqual([...TXN_HEADERS])
     expect(env.sheets[TXN_TAB].frozen).toBe(1)
     env.fn('setup')()
@@ -251,5 +251,33 @@ describe('rules and tidying after an email run', () => {
     expect(rows.map((r) => r[col('Category')])).toEqual(['Transfer', 'Transfer'])
     expect(rows.find((r) => r[col('Email ID')] === 'd1')![col('Note')]).toBe('To Axis Bank ••1111')
     expect(env.tab('Log').some((x) => /tagged as transfers/.test(String(x[1])))).toBe(true)
+  })
+})
+
+describe('holdings sync', () => {
+  const ppf = {
+    id: 'h1', type: 'ppf', name: 'PPF · SBI', institution: 'SBI', code: '', units: '', pricePaise: null, priceDate: '', investedPaise: 61500000,
+    valuePaise: null, valueDate: '', ratePct: 7.1, startDate: '2026-04-01', maturityDate: '2034-03-31', compounding: '', payout: false,
+    monthlyPaise: 1250000, tenureMonths: null, notes: '', updatedAt: '2026-11-17T10:00:00.000Z', deleted: false,
+  }
+  it('push writes a readable row; pull reads it back, including rows typed by hand', () => {
+    const { env, token } = ready()
+    let r = env.call({ token, action: 'push', holdings: [ppf] })
+    expect(r.ok).toBe(true)
+    expect(r.holdings).toEqual([ppf])
+    const row = env.tab('Holdings')[1]
+    expect(row.slice(0, 3)).toEqual(['h1', 'PPF · SBI', 'PPF'])
+    expect(row[8]).toBe(615000) // Invested in rupees
+    env.sheets.Holdings.grid.push(['', 'Flat', 'Property', '', '', '', '', '', '', 6000000, '01/06/2026', '', '', '', '', '', '', '', '', '', ''])
+    env.sheets.Holdings.grid.push(['', 'Mystery', 'Bitcoin', '', '', '', '', '', '', 10, '', '', '', '', '', '', '', '', '', '', ''])
+    r = env.call({ token, action: 'pull' })
+    expect(r.holdings).toHaveLength(2)
+    expect(r.holdings[1]).toMatchObject({ type: 'property', name: 'Flat', valuePaise: 600000000, valueDate: '2026-06-01' })
+    expect(r.problems).toEqual(['Holdings row 4: unknown Type "Bitcoin"'])
+  })
+  it('refuses a holding with a bad type or number', () => {
+    const { env, token } = ready()
+    expect(env.call({ token, action: 'push', holdings: [{ ...ppf, type: 'crypto' }] }).error).toBe('Holding 1: bad type.')
+    expect(env.call({ token, action: 'push', holdings: [{ ...ppf, ratePct: 'high' }] }).error).toBe('Holding 1: bad ratePct.')
   })
 })

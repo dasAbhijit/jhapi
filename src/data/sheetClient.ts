@@ -3,6 +3,7 @@
  * The body is sent as text/plain so the browser makes a simple request with no CORS preflight, which
  * Apps Script cannot answer; fetch then follows Google's redirect to the reply.
  */
+import type { Holding } from '../core/holdings'
 import type { ReviewItem, Rule, Statement, Txn } from '../core/records'
 
 export interface SheetConfig {
@@ -18,6 +19,7 @@ export interface PullResult {
   statements: Statement[]
   review: ReviewItem[]
   rules?: Rule[]
+  holdings?: Holding[]
   problems: string[]
   rejected?: string[]
 }
@@ -99,7 +101,7 @@ export class SheetClient {
     return this.call('pull')
   }
 
-  push(changes: { transactions?: Txn[]; review?: Pick<ReviewItem, 'id' | 'resolved' | 'updatedAt'>[]; rules?: Rule[] }, device: string): Promise<PullResult> {
+  push(changes: { transactions?: Txn[]; review?: Pick<ReviewItem, 'id' | 'resolved' | 'updatedAt'>[]; rules?: Rule[]; holdings?: Holding[] }, device: string): Promise<PullResult> {
     return this.call('push', { ...changes, device })
   }
 

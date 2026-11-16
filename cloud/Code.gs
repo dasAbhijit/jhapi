@@ -24,6 +24,9 @@ var JhapiCore = (() => {
   // src/cloud/entry.ts
   var entry_exports = {};
   __export(entry_exports, {
+    HOLDINGS_TAB: () => HOLDINGS_TAB,
+    HOLDING_HEADERS: () => HOLDING_HEADERS,
+    HOLDING_TYPES: () => HOLDING_TYPES,
     LOG_TAB: () => LOG_TAB,
     REVIEW_HEADERS: () => REVIEW_HEADERS,
     REVIEW_TAB: () => REVIEW_TAB,
@@ -39,11 +42,13 @@ var JhapiCore = (() => {
     checkSender: () => checkSender,
     enrichFromReceipts: () => enrichFromReceipts,
     findSender: () => findSender,
+    holdingToRow: () => holdingToRow,
     isDuplicate: () => isDuplicate,
     mergeById: () => mergeById,
     pairTransfers: () => pairTransfers,
     parseEmail: () => parseEmail,
     reviewToRow: () => reviewToRow,
+    rowToHolding: () => rowToHolding,
     rowToReview: () => rowToReview,
     rowToRule: () => rowToRule,
     rowToStatement: () => rowToStatement,
@@ -887,6 +892,34 @@ var JhapiCore = (() => {
     return out;
   }
 
+  // src/core/holdings.ts
+  var HOLDING_TYPES = {
+    epf: { label: "EPF / VPF", cls: "retirement", method: "calc", fields: ["institution", "investedPaise", "startDate", "ratePct", "monthlyPaise"] },
+    ppf: { label: "PPF", cls: "retirement", method: "calc", fields: ["institution", "investedPaise", "startDate", "ratePct", "monthlyPaise", "maturityDate"] },
+    nps: { label: "NPS", cls: "retirement", method: "price", fields: ["institution", "units", "pricePaise", "valuePaise", "investedPaise"] },
+    ssy: { label: "Sukanya Samriddhi", cls: "retirement", method: "calc", fields: ["institution", "investedPaise", "startDate", "ratePct", "monthlyPaise", "maturityDate"] },
+    mf: { label: "Mutual fund", cls: "market", method: "price", fields: ["institution", "code", "units", "pricePaise", "investedPaise"] },
+    stock: { label: "Stock", cls: "market", method: "price", fields: ["institution", "code", "units", "pricePaise", "investedPaise"] },
+    etf: { label: "ETF", cls: "market", method: "price", fields: ["institution", "code", "units", "pricePaise", "investedPaise"] },
+    sgb: { label: "Sovereign Gold Bond", cls: "market", method: "price", fields: ["code", "units", "pricePaise", "investedPaise", "maturityDate"] },
+    fd: { label: "Fixed deposit", cls: "deposits", method: "calc", compounding: "quarterly", fields: ["institution", "investedPaise", "ratePct", "startDate", "maturityDate", "compounding", "payout"] },
+    rd: { label: "Recurring deposit", cls: "deposits", method: "calc", compounding: "quarterly", fields: ["institution", "monthlyPaise", "ratePct", "startDate", "tenureMonths"] },
+    nsc: { label: "NSC", cls: "deposits", method: "calc", compounding: "yearly", fields: ["investedPaise", "ratePct", "startDate", "maturityDate"] },
+    kvp: { label: "KVP", cls: "deposits", method: "calc", compounding: "yearly", fields: ["investedPaise", "ratePct", "startDate", "maturityDate"] },
+    scss: { label: "SCSS", cls: "deposits", method: "calc", compounding: "quarterly", payout: true, fields: ["investedPaise", "ratePct", "startDate", "maturityDate"] },
+    pomis: { label: "Post Office MIS", cls: "deposits", method: "calc", compounding: "monthly", payout: true, fields: ["investedPaise", "ratePct", "startDate", "maturityDate"] },
+    gold: { label: "Gold / silver", cls: "gold_other", method: "manual", fields: ["valuePaise", "valueDate", "investedPaise"] },
+    property: { label: "Property", cls: "gold_other", method: "manual", fields: ["valuePaise", "valueDate", "investedPaise"] },
+    cash: { label: "Cash / wallet", cls: "gold_other", method: "manual", fields: ["valuePaise", "valueDate"] },
+    lent: { label: "Money lent", cls: "gold_other", method: "manual", fields: ["valuePaise", "valueDate", "maturityDate"] },
+    other: { label: "Other asset", cls: "gold_other", method: "manual", fields: ["institution", "valuePaise", "valueDate", "investedPaise"] },
+    home_loan: { label: "Home loan", cls: "liabilities", method: "loan", fields: ["institution", "investedPaise", "ratePct", "tenureMonths", "startDate"] },
+    car_loan: { label: "Car loan", cls: "liabilities", method: "loan", fields: ["institution", "investedPaise", "ratePct", "tenureMonths", "startDate"] },
+    personal_loan: { label: "Personal loan", cls: "liabilities", method: "loan", fields: ["institution", "investedPaise", "ratePct", "tenureMonths", "startDate"] },
+    education_loan: { label: "Education loan", cls: "liabilities", method: "loan", fields: ["institution", "investedPaise", "ratePct", "tenureMonths", "startDate"] },
+    borrowed: { label: "Money borrowed / other dues", cls: "liabilities", method: "manual", fields: ["valuePaise", "valueDate"] }
+  };
+
   // src/core/sheetRows.ts
   var TXN_TAB = "Transactions";
   var REVIEW_TAB = "Review";
@@ -1053,6 +1086,102 @@ var JhapiCore = (() => {
     if (!contains || !category) return null;
     return { id: str(get("ID")), contains, category, updatedAt: str(get("Updated")), deleted: bool(get("Deleted")) };
   }
+  var HOLDINGS_TAB = "Holdings";
+  var HOLDING_HEADERS = [
+    "ID",
+    "Name",
+    "Type",
+    "Institution",
+    "Code",
+    "Units",
+    "Price",
+    "Price date",
+    "Invested",
+    "Value",
+    "Value date",
+    "Rate %",
+    "Start",
+    "Maturity",
+    "Compounding",
+    "Payout",
+    "Monthly",
+    "Months",
+    "Notes",
+    "Updated",
+    "Deleted"
+  ];
+  TEXT_COLUMNS[HOLDINGS_TAB] = ["ID", "Code", "Units", "Price date", "Value date", "Start", "Maturity", "Updated"];
+  var COMPOUNDING = ["monthly", "quarterly", "half-yearly", "yearly"];
+  function holdingToRow(h) {
+    var _a, _b;
+    return [
+      h.id,
+      h.name,
+      HOLDING_TYPES[h.type].label,
+      h.institution,
+      h.code,
+      h.units,
+      rupees(h.pricePaise),
+      h.priceDate,
+      rupees(h.investedPaise),
+      rupees(h.valuePaise),
+      h.valueDate,
+      (_a = h.ratePct) != null ? _a : "",
+      h.startDate,
+      h.maturityDate,
+      h.compounding,
+      h.payout ? "TRUE" : "",
+      rupees(h.monthlyPaise),
+      (_b = h.tenureMonths) != null ? _b : "",
+      h.notes,
+      h.updatedAt,
+      h.deleted ? "TRUE" : ""
+    ];
+  }
+  function readHoldingType(c) {
+    const s = str(c).toLowerCase();
+    const key = Object.keys(HOLDING_TYPES).find((k) => k === s || HOLDING_TYPES[k].label.toLowerCase() === s);
+    return key != null ? key : null;
+  }
+  function num(c) {
+    if (c === null || c === "") return null;
+    const n = typeof c === "number" ? c : Number(String(c).replace(/[%,\s]/g, ""));
+    return Number.isFinite(n) ? n : null;
+  }
+  function rowToHolding(row, headers) {
+    const get = (h) => row[headers.indexOf(h)];
+    const raw = (h) => row[headers.indexOf(h)];
+    if (row.every((c) => c === "" || c === null)) return { holding: null };
+    const type = readHoldingType(get("Type"));
+    if (!type) return { holding: null, problem: `unknown Type "${str(get("Type"))}"` };
+    const comp = str(get("Compounding")).toLowerCase();
+    const months = num(get("Months"));
+    return {
+      holding: {
+        id: str(get("ID")),
+        type,
+        name: str(get("Name")) || HOLDING_TYPES[type].label,
+        institution: str(get("Institution")),
+        code: str(get("Code")),
+        units: str(get("Units")),
+        pricePaise: paiseFrom(get("Price")),
+        priceDate: readDate(raw("Price date")),
+        investedPaise: paiseFrom(get("Invested")),
+        valuePaise: paiseFrom(get("Value")),
+        valueDate: readDate(raw("Value date")),
+        ratePct: num(get("Rate %")),
+        startDate: readDate(raw("Start")),
+        maturityDate: readDate(raw("Maturity")),
+        compounding: COMPOUNDING.includes(comp) ? comp : "",
+        payout: bool(get("Payout")),
+        monthlyPaise: paiseFrom(get("Monthly")),
+        tenureMonths: months === null ? null : Math.round(months),
+        notes: str(get("Notes")),
+        updatedAt: str(get("Updated")),
+        deleted: bool(get("Deleted"))
+      }
+    };
+  }
   return __toCommonJS(entry_exports);
 })();
 
@@ -1091,6 +1220,7 @@ var TABS = [
   { name: J.STATEMENT_TAB, headers: J.STATEMENT_HEADERS },
   { name: J.REVIEW_TAB, headers: J.REVIEW_HEADERS },
   { name: J.RULES_TAB, headers: J.RULES_HEADERS },
+  { name: J.HOLDINGS_TAB, headers: J.HOLDING_HEADERS },
   { name: J.LOG_TAB, headers: ['Time', 'Event'] },
 ];
 
@@ -1307,20 +1437,67 @@ function loadStatements_() {
   return out;
 }
 
-/** The owner's category rules. Rows typed by hand get an ID and an Updated time. */
-function loadRules_() {
-  var tab = readTab_(J.RULES_TAB);
+/**
+ * A table synced row by row (Rules, Holdings): rows typed by hand get an ID and an Updated time and
+ * are rewritten in the standard layout. `fromRow` returns a record, or {problem} for a row it cannot read.
+ */
+function loadTable_(tabName, fromRow, toRow, problems) {
+  var tab = readTab_(tabName);
   var items = [];
   tab.rows.forEach(function (row, i) {
-    var r = J.rowToRule(row, tab.headers);
-    if (!r) return;
+    if (row.join('') === '') return;
+    var r = fromRow(row, tab.headers);
+    if (!r || r.problem) {
+      if (r && r.problem && problems) problems.push(tabName + ' row ' + (i + 2) + ': ' + r.problem);
+      return;
+    }
     var fix = false;
     if (!r.id) { r.id = Utilities.getUuid(); fix = true; }
     if (!r.updatedAt) { r.updatedAt = nowIso_(); fix = true; }
-    if (fix) writeRows_(tab.sheet, J.RULES_TAB, tab.headers, i + 2, [J.ruleToRow(r)]);
-    items.push({ rule: r, row: i + 2 });
+    if (fix) writeRows_(tab.sheet, tabName, tab.headers, i + 2, [toRow(r)]);
+    items.push({ rec: r, row: i + 2 });
   });
   return { tab: tab, items: items };
+}
+
+function ruleFromRow_(row, headers) {
+  return J.rowToRule(row, headers);
+}
+
+function holdingFromRow_(row, headers) {
+  var r = J.rowToHolding(row, headers);
+  return r.holding || (r.problem ? { problem: r.problem } : null);
+}
+
+function loadRules_(problems) {
+  return loadTable_(J.RULES_TAB, ruleFromRow_, J.ruleToRow, problems);
+}
+
+function loadHoldings_(problems) {
+  return loadTable_(J.HOLDINGS_TAB, holdingFromRow_, J.holdingToRow, problems);
+}
+
+/** Merge records from the app into a table: newer Updated wins. Returns how many rows changed. */
+function mergeTable_(tabName, state, incoming, toRow, rejected) {
+  var byId = {};
+  state.items.forEach(function (x) { byId[x.rec.id] = x; });
+  var appended = [];
+  var changed = 0;
+  incoming.forEach(function (rec) {
+    var cur = byId[rec.id];
+    if (cur && cur.rec.updatedAt > rec.updatedAt) { rejected.push(rec.id); return; }
+    if (cur && cur.rec.updatedAt === rec.updatedAt) return;
+    if (cur) {
+      writeRows_(state.tab.sheet, tabName, state.tab.headers, cur.row, [toRow(rec)]);
+      cur.rec = rec;
+    } else {
+      appended.push(toRow(rec));
+      byId[rec.id] = { rec: rec, row: -1 };
+    }
+    changed++;
+  });
+  appendRows_(tabName, appended);
+  return changed;
 }
 
 function pull_() {
@@ -1333,7 +1510,8 @@ function pull_() {
     transactions: t.items.map(function (x) { return x.txn; }),
     statements: loadStatements_(),
     review: loadReview_().items.map(function (x) { return x.item; }),
-    rules: loadRules_().items.map(function (x) { return x.rule; }),
+    rules: loadRules_(t.problems).items.map(function (x) { return x.rec; }),
+    holdings: loadHoldings_(t.problems).items.map(function (x) { return x.rec; }),
     problems: t.problems,
   };
 }
@@ -1348,8 +1526,21 @@ function validatePush_(body) {
   var txns = body.transactions || [];
   var review = body.review || [];
   var rules = body.rules || [];
-  if (!Array.isArray(txns) || !Array.isArray(review) || !Array.isArray(rules)) throw new Error('Bad request.');
-  if (txns.length + review.length + rules.length > MAX_RECORDS_PER_PUSH) throw new Error('Too many changes in one request.');
+  var holdings = body.holdings || [];
+  if (!Array.isArray(txns) || !Array.isArray(review) || !Array.isArray(rules) || !Array.isArray(holdings)) throw new Error('Bad request.');
+  if (txns.length + review.length + rules.length + holdings.length > MAX_RECORDS_PER_PUSH) throw new Error('Too many changes in one request.');
+  holdings.forEach(function (h, i) {
+    var where = 'Holding ' + (i + 1) + ': ';
+    if (!h || typeof h.id !== 'string' || !h.id || h.id.length > 100) throw new Error(where + 'bad id.');
+    if (!Object.prototype.hasOwnProperty.call(J.HOLDING_TYPES, h.type)) throw new Error(where + 'bad type.');
+    if (typeof h.deleted !== 'boolean' || typeof h.payout !== 'boolean' || !ISO_TIME.test(String(h.updatedAt))) throw new Error(where + 'bad record.');
+    ['name', 'institution', 'code', 'units', 'priceDate', 'valueDate', 'startDate', 'maturityDate', 'compounding', 'notes'].forEach(function (k) {
+      if (typeof h[k] !== 'string' || h[k].length > 2000) throw new Error(where + 'bad ' + k + '.');
+    });
+    ['pricePaise', 'investedPaise', 'valuePaise', 'ratePct', 'monthlyPaise', 'tenureMonths'].forEach(function (k) {
+      if (h[k] !== null && (typeof h[k] !== 'number' || !isFinite(h[k]) || Math.abs(h[k]) > 1e15)) throw new Error(where + 'bad ' + k + '.');
+    });
+  });
   rules.forEach(function (r, i) {
     var ok = r && typeof r.id === 'string' && r.id && r.id.length <= 100 &&
       typeof r.contains === 'string' && r.contains.trim() && r.contains.length <= 200 &&
@@ -1422,20 +1613,17 @@ function push_(body) {
     });
   });
 
-  var ruleState = loadRules_();
-  var rulesById = {};
-  ruleState.items.forEach(function (x) { rulesById[x.rule.id] = x; });
-  var newRules = [];
-  (body.rules || []).forEach(function (r) {
-    var rec = { id: r.id, contains: r.contains.trim(), category: r.category.trim(), updatedAt: r.updatedAt, deleted: r.deleted };
-    var cur = rulesById[rec.id];
-    if (cur && cur.rule.updatedAt > rec.updatedAt) { rejected.push(rec.id); return; }
-    if (cur && cur.rule.updatedAt === rec.updatedAt) return;
-    if (cur) writeRows_(ruleState.tab.sheet, J.RULES_TAB, ruleState.tab.headers, cur.row, [J.ruleToRow(rec)]);
-    else newRules.push(J.ruleToRow(rec));
-    changed++;
+  var cleanRules = (body.rules || []).map(function (r) {
+    return { id: r.id, contains: r.contains.trim(), category: r.category.trim(), updatedAt: r.updatedAt, deleted: r.deleted };
   });
-  appendRows_(J.RULES_TAB, newRules);
+  changed += mergeTable_(J.RULES_TAB, loadRules_(), cleanRules, J.ruleToRow, rejected);
+  var cleanHoldings = (body.holdings || []).map(function (h) {
+    var out = {};
+    ['id', 'type', 'name', 'institution', 'code', 'units', 'pricePaise', 'priceDate', 'investedPaise', 'valuePaise', 'valueDate', 'ratePct',
+      'startDate', 'maturityDate', 'compounding', 'payout', 'monthlyPaise', 'tenureMonths', 'notes', 'updatedAt', 'deleted'].forEach(function (k) { out[k] = h[k]; });
+    return out;
+  });
+  changed += mergeTable_(J.HOLDINGS_TAB, loadHoldings_(), cleanHoldings, J.holdingToRow, rejected);
 
   if (changed > 0) {
     bumpVersion_();
@@ -1453,7 +1641,7 @@ function onEdit(e) {
   if (!e || !e.range) return;
   var sheet = e.range.getSheet();
   var name = sheet.getName();
-  if (name !== J.TXN_TAB && name !== J.REVIEW_TAB && name !== J.STATEMENT_TAB && name !== J.RULES_TAB) return;
+  if ([J.TXN_TAB, J.REVIEW_TAB, J.STATEMENT_TAB, J.RULES_TAB, J.HOLDINGS_TAB].indexOf(name) < 0) return;
   var first = Math.max(2, e.range.getRow());
   var last = e.range.getRow() + e.range.getNumRows() - 1;
   if (last < first) return;
@@ -1518,7 +1706,7 @@ function readInboxLocked_() {
   loadReview_().items.forEach(function (x) { if (x.item.emailId) known[x.item.emailId] = true; });
   var statements = loadStatements_();
   statements.forEach(function (s) { if (s.emailId) known[s.emailId] = true; });
-  var rules = loadRules_().items.map(function (x) { return x.rule; });
+  var rules = loadRules_().items.map(function (x) { return x.rec; });
 
   var newTxns = [];
   var newStatements = [];

@@ -1,6 +1,8 @@
 import { NavLink, Route, Routes } from 'react-router-dom'
+import HoldingEdit from './pages/HoldingEdit.tsx'
 import Home from './pages/Home.tsx'
 import { Placeholder } from './pages/Placeholder.tsx'
+import Portfolio from './pages/Portfolio.tsx'
 import Settings from './pages/Settings.tsx'
 import Transactions from './pages/Transactions.tsx'
 import TxnEdit from './pages/TxnEdit.tsx'
@@ -21,7 +23,9 @@ export default function App() {
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/transactions/new" element={<TxnEdit key="new" />} />
           <Route path="/transactions/:id" element={<TxnEdit />} />
-          <Route path="/portfolio" element={<Placeholder title="Portfolio" milestone="M5" />} />
+          <Route path="/portfolio" element={<Portfolio />} />
+          <Route path="/portfolio/new" element={<HoldingEdit key="new" />} />
+          <Route path="/portfolio/:id" element={<HoldingEdit />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Placeholder title="Not found" />} />
         </Routes>

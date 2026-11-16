@@ -127,7 +127,18 @@ Amounts are **rupees** in the sheet and integer **paise** in the app. Dates are 
 
 **Log:** `Time`, `Event` (the last 500 lines).
 
-Holdings, goals and outlooks (M5–M7) will get their own tabs in the same style.
+**Holdings:** `ID`, `Name`, `Type`, `Institution`, `Code`, `Units`, `Price`, `Price date`, `Invested`, `Value`, `Value date`, `Rate %`, `Start`, `Maturity`, `Compounding`, `Payout`, `Monthly`, `Months`, `Notes`, `Updated`, `Deleted`.
+
+- `Type` is a label such as `PPF`, `Mutual fund`, `Home loan` (the full list is `HOLDING_TYPES` in `src/core/holdings.ts`); a row with an unknown type is reported, not guessed.
+- The value is worked out in the app (`valueHolding`), not stored:
+  - **CALC**: EPF, PPF and SSY from the balance on the start date, the rate and the monthly contribution; FD, NSC, KVP, SCSS, PO MIS and RD from their rate and dates.
+  - **PRICE**: mutual funds, stocks, ETFs, SGBs and NPS from units × price.
+  - **EMI**: loans from the amount, rate, months and first EMI date.
+  - **MANUAL**: gold, property, cash, money lent and anything else, from `Value`.
+  - Typing a `Value` overrides the calculation for loans and market holdings, e.g. the outstanding amount from the lender's statement.
+- Liabilities count as negative.
+
+Goals and outlooks (M6–M7) will get their own tabs in the same style.
 
 ## 7. Core logic (`src/core`)
 
@@ -167,6 +178,8 @@ Built for **iPhone and iPad in Safari**. Phone layout uses the 390px design widt
 | Transactions ✅ | All / Needs review tabs, search, "show receipts", grouped by day. Needs review lists Not parsed and Blocked emails with **Add by hand**, **Mark done** and **Read bank emails now** |
 | Add / edit transaction ✅ | Money out/in, amount, date, payee, category, account, note, "do not count", delete |
 | Settings ✅ | Connect the sheet (web app URL and secret code), last sync and last email run, rows the sheet could not read, Sync now, Read bank emails now, Disconnect this device |
+| Portfolio ✅ | Net worth from holdings, then each class (Retirement, Market, Deposits, Gold & other, Liabilities) with its total; each holding shows how its value was found (CALC, PRICE, EMI, MANUAL) and what is missing |
+| Add / edit holding ✅ | Type picker grouped by class, then only the fields that type needs, with a live "value today" preview |
 | Unlock (M8) | Passkey or passphrase when encryption arrives |
 | Portfolio | Net worth and liquid amount, holdings grouped by class with source badge (AUTO, CAS, CALC, MANUAL) and value date, + Add entry |
 | Add entry | Search and type picker, CAS import |
@@ -186,7 +199,8 @@ Re-planned on 17 Nov 2026 when the owner chose the Google Sheet as the store.
 | M4a ✅ | Parsers for Axis, ICICI, SBI, DBS, PhonePe and Amazon Pay; allow-list; synthetic tests and local real-sample tests | All 57 real samples give the expected result |
 | M4b ✅ | Jhapi's own Apps Script (email reader with DKIM check, web app, onEdit), sheet layout, app sync (pull on open, push on edit, offline queue), Home, Transactions, Needs review, Add/edit, Settings | Script tests on fake Google pass, the app ↔ script round-trip test passes, deployed |
 | M4c | ✅ Owner's category rules (Rules tab, "Always use…"), transfer pairing between own accounts, receipts improving bank rows. Still to do: live on the owner's sheet, a week of real mail | A week of real mail reads with nothing missed |
-| M5 | Portfolio: holdings tab in the sheet, Add entry, EPF/PPF/FD/loan detail using the M1 calculators, prices, net worth snapshots, Dashboard | Dashboard matches the sum of the owner's accounts |
+| M5a ✅ | Holdings tab synced both ways; Portfolio and add/edit screens; values from the M1 calculators; net worth on Home (holdings + bank balances from emails − loans) | Round trip: a PPF added in the app shows the right value and lands in the sheet |
+| M5b | Prices: daily AMFI NAVs for funds with a scheme code, GOOGLEFINANCE for stocks and ETFs; EPF/PPF rates by year; daily net worth snapshots and the Home time-range chart | Dashboard matches the sum of the owner's accounts |
 | M6 | Goals, goal tagging, forecast worker | Goal detail matches the design |
 | M7 | AI Outlook and Gemini fallback for unparsed emails | Outlook screens work with a real key |
 | M8 | Encryption on the device (passphrase or passkey), CAS PDF import, CSV export, user guide in `docs/` synced to GitBook | Installed on the owner's phone and in daily use |

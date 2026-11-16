@@ -145,4 +145,32 @@ describe('app and sheet round trip', () => {
     await user.click(screen.getByRole('link', { name: 'Settings' }))
     expect(await screen.findByText(/“SWIGGY” →/)).toBeInTheDocument()
   })
+
+  it('adds a PPF holding: value preview, sheet row, and the Portfolio total', async () => {
+    const user = userEvent.setup()
+    const { env, token } = setup()
+    await user.type(screen.getByLabelText('Web app URL'), URL)
+    await user.type(screen.getByLabelText('Secret code'), token)
+    await user.click(screen.getByRole('button', { name: 'Connect' }))
+    await screen.findByText('Transactions in the sheet')
+
+    await user.click(screen.getByRole('link', { name: 'Invest' }))
+    await user.click(await screen.findByRole('link', { name: '+ Add' }))
+    await user.click(screen.getByRole('button', { name: 'PPF' }))
+    await user.type(screen.getByLabelText('Balance on the start date (₹)'), '1,00,000')
+    await user.type(screen.getByLabelText('Balance date (use 1 April)'), '2026-04-01')
+    await user.type(screen.getByLabelText('Interest rate (% a year)'), '7.1')
+    // Today is pinned to 17 Nov 2026: 7 full months accrued, 1,00,000 × 7.1% × 7/12 = 4,141.67
+    expect(await screen.findByText('₹1,04,142')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await screen.findByRole('heading', { name: 'Portfolio' })
+    expect(screen.getAllByText('₹1,04,142').length).toBeGreaterThan(0)
+    await waitFor(() => {
+      const row = env.tab('Holdings')[1]
+      expect(row?.slice(1, 3)).toEqual(['PPF', 'PPF'])
+      expect(row?.[8]).toBe(100000)
+      expect(row?.[11]).toBe(7.1)
+    })
+  })
 })

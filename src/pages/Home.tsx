@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
+import { summarise } from '../core/holdings'
 import { accountLabel, counts } from '../core/records'
-import { formatRupees } from '../core/money'
+import { formatRupees, formatShort } from '../core/money'
 import { useStore } from '../data/storeContext'
 import { accounts, groupByDate, monthSummary, todayIST, upcomingDues } from '../data/summary'
 import { NotConnected, SyncLine, TxnRow } from '../ui/bits'
@@ -18,6 +19,10 @@ export default function Home() {
   const accts = accounts(txns)
   const recent = groupByDate(txns.filter(counts)).flatMap((g) => g.items).slice(0, 6)
   const top = sum.byCategory.slice(0, 6)
+  const port = summarise(data?.holdings ?? [], today)
+  // Bank balances only count when a bank email reported one; cards are left to their statements.
+  const cash = accts.filter((a) => a.balancePaise !== null && a.account.includes('-bank-')).reduce((s, a) => s + (a.balancePaise ?? 0), 0)
+  const net = port.netPaise + cash
   const max = top[0]?.paise ?? 1
 
   return (
@@ -37,6 +42,15 @@ export default function Home() {
       )}
 
       <div className="grid">
+        <Link className="card tap-card" to="/portfolio">
+          <div className="kv">
+            <h2>Net worth</h2>
+            <strong className="big">{formatRupees(net)}</strong>
+          </div>
+          <span className="row-sub">
+            Holdings {formatShort(port.assetsPaise)} · bank balances {formatShort(cash)} · loans {formatShort(-port.liabilitiesPaise)}
+          </span>
+        </Link>
         {dues.length > 0 && (
           <section className="card">
             <h2>Card bills due</h2>

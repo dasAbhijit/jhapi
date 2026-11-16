@@ -75,12 +75,12 @@ Every requirement starts as **Planned**. The milestone column refers to the buil
 
 | ID | Requirement | Milestone | Verified |
 |---|---|---|---|
-| E1 | The owner can add every asset and liability type in the Add entry picker, and search the list | M5 | Planned |
-| E2 | Each holding shows its value, how the value was found (price feed, statement, calculated, manual) and the date of that value | M5 | Planned |
+| E1 | The owner can add every asset and liability type in the Add entry picker, from the app or the sheet | M5a | Auto (round trip adds a PPF; script reads hand-typed rows and reports unknown types). Search in the picker: planned |
+| E2 | Each holding shows its value, how the value was found (calculated, price, EMI schedule, manual) and what is missing | M5a | Auto (valuation tests); Open for a hand check |
 | E3 | EPF shows employee, employer and VPF shares, interest by declared rate per year credited on 31 March, EPS kept out of net worth, and reconciliation with the passbook | M5 | Planned |
 | E4 | PPF, NSC, SCSS, KVP, PO MIS, Sukanya Samriddhi, FD and RD values are calculated from their rates and dates | M1, M5 | Auto (calculations, 11 tests). Screens planned |
 | E5 | Loans show outstanding principal, EMI, rate, EMIs left, interest paid, and handle rate changes and prepayments | M1, M5 | Auto (calculations, 6 tests). Screens planned |
-| E6 | Stocks, ETFs and SGBs are valued from daily prices; mutual funds from daily NAVs | M5 | Planned |
+| E6 | Stocks, ETFs and SGBs are valued from daily prices; mutual funds from daily NAVs | M5b | Units × price built (M5a); automatic prices planned |
 | E7 | EMI and contribution emails update the matching loan or holding | M5 | Planned |
 | E8 | The owner can import a CAS statement PDF for mutual funds and demat holdings | M8 | Planned |
 
@@ -88,7 +88,7 @@ Every requirement starts as **Planned**. The milestone column refers to the buil
 
 | ID | Requirement | Milestone | Verified |
 |---|---|---|---|
-| F1 | Net worth is assets minus liabilities, shown by class | M5 | Planned |
+| F1 | Net worth is assets minus liabilities, shown by class | M5a | Auto (summary test); Home adds bank balances reported by emails |
 | F2 | The Dashboard shows the change and a chart for 1D, 1W, 1M, 3M, 6M, 1Y, YTD, FY (April to March), 5Y and All | M5 | Planned |
 | F3 | A net worth snapshot is saved once a day the app is opened | M5 | Planned |
 
