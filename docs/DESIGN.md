@@ -2,7 +2,7 @@
 
 A personal finance tracker for Indian money: bank and card transactions read automatically from bank alert emails, plus every kind of asset and loan (EPF, PPF, NPS, mutual funds, stocks, FDs, gold, property, home loan), goals with forecasts, and an AI outlook. Amounts are in rupees (₹). See [Requirements](REQUIREMENTS.md) for what it must do and how each item will be checked.
 
-**Status:** planned, not yet built.
+**Status:** M0 (skeleton) and M1 (calculations) are built and tested. Nothing is deployed yet. Progress is tracked in section 10.
 
 Jhapi (ঝাঁপি) is short for *Lokkhir Jhapi*, the small pot of savings kept in many Bengali homes.
 
@@ -158,22 +158,21 @@ The asset and liability `type` values are the ones in the Add Entry picker: EPF/
 
 Pure functions with no UI or network code, covered by unit and randomized tests, as in Bhag.
 
-1. **Money:** paise arithmetic, Indian grouping, lakh/crore short forms (₹44.8L, ₹6.4 Cr), financial year of a date.
-2. **EPF:** interest on the monthly running balance at the declared rate for the year, credited on 31 March. Employee, employer and VPF shares tracked separately. EPS is shown but not counted in net worth. "Reconcile with passbook" records the true balance and the difference.
-3. **PPF, SSY, NSC, SCSS, KVP, PO MIS:** each scheme's own compounding and payout rules, using the owner's declared rates by year.
-4. **FD and RD:** simple or compound interest (monthly, quarterly, yearly), value today and at maturity.
-5. **Loans:** reducing-balance schedule. Rate changes and prepayments either cut the tenure or the EMI (owner chooses). Each EMI is split into principal and interest.
-6. **Market holdings:** units × latest price, with the price date shown.
-7. **Net worth:** sum by class, liabilities negative. A snapshot is saved once a day when the app opens, and the Dashboard time ranges (1D … All, YTD, FY) read from snapshots.
-8. **Goals:** future cost = today's cost × (1 + inflation)^years. SIP needed solves for the gap using the expected return of the tagged holdings. A holding can be split across goals by percentage; the parts must add up to 100% or less.
-9. **Forecast:** 1,000 runs of monthly returns per asset class (normal distribution from expected return and volatility), run in a Web Worker. Shows the median and the 10th to 90th percentile in today's rupees, and the chance of reaching the target. Fixed-rate assets and loans are calculated, not simulated.
-10. **Transactions:** transfer pairing, duplicate flagging, category rules, monthly spending totals.
+1. **Money** (`money.ts`): integer paise; `formatINR` (₹12,34,567.89), `formatRupees` (₹38,420), `formatShort` (₹44.8L, ₹6.4 Cr, with 99.96 lakh shown as ₹1 Cr). **Dates** (`dates.ts`): `YYYY-MM-DD` strings, adding months clamps to month end (31 Jan + 1 month = 28/29 Feb), financial year (FY 2026–27 is 1 Apr 2026 to 31 Mar 2027).
+2. **EPF, PPF, SSY** (`savings.ts`): one engine for schemes that credit interest once a year. Each month's interest is balance × declared rate / 12. The year's total is rounded to the rupee and credited on 31 March, with no compounding within the year. For EPF a contribution counts from the month it is credited. For PPF and SSY a deposit after the 5th counts from the next month. Before 31 March the result shows the interest so far as "accrued". A year with no declared rate uses the latest rate and is marked as an estimate. Employee, employer and VPF shares are separate holdings using the same engine. EPS is shown but not counted in net worth. "Reconcile with passbook" records the true balance (M5).
+3. **FD, RD, NSC, KVP, SCSS, PO MIS** (`deposits.ts`): compound interest with part periods, A = P(1 + r/n)^(n·days/365). Schemes that pay interest out stay at their principal, and `payoutPerPeriod` gives the payout. Each RD installment grows from its own date. These are estimates between statements, because banks count days slightly differently.
+4. **Loans** (`loans.ts`): reducing balance. EMI and each month's interest are rounded to the rupee, and the last EMI clears the balance exactly. Rate changes and prepayments apply from the next EMI. For each, the owner picks **keep EMI, change the number of EMIs** (the usual bank default) or **keep the end date, change the EMI**. If a rate rise means the EMI no longer covers the interest, the EMI is raised. `loanStatus` gives the outstanding amount, EMIs paid and left, interest paid and the next EMI date.
+5. **Market holdings** (`market.ts`): units are a decimal string (MF units have 3 decimals), and value = units × price is worked out exactly with BigInt and rounded to the paisa. Gain and gain %.
+6. **Net worth:** sum by class, liabilities negative. A snapshot is saved once a day when the app opens, and the Dashboard time ranges (1D … All, YTD, FY) read from snapshots.
+7. **Goals** (`goals.ts`): future cost = today's cost × (1 + inflation)^years. Money already set aside grows at the expected return. SIP needed assumes the SIP is invested at the start of each month, at the monthly rate equal to the yearly return ((1+R)^(1/12) − 1), and is rounded up to the next ₹100. A holding can be split across goals by percentage; the parts must add up to 100% or less.
+8. **Forecast:** 1,000 runs of monthly returns per asset class (normal distribution from expected return and volatility), run in a Web Worker. Shows the median and the 10th to 90th percentile in today's rupees, and the chance of reaching the target. Fixed-rate assets and loans are calculated, not simulated.
+9. **Transactions:** transfer pairing, duplicate flagging, category rules, monthly spending totals.
 
 ## 8. AI Outlook
 
 - Runs when the app is opened and the last outlook is more than a day old, or on **Refresh now**. A web app cannot wake itself at a set time.
 - Gemini, with Google Search grounding, is asked for recent rate, inflation and market news, and to suggest changes to the owner's **baseline** expected return and volatility for each market asset class.
-- Suggestions are clamped: return within ±2 percentage points of baseline, volatility between 0.8× and 1.5× of baseline. The forecast itself is computed locally (section 7.9).
+- Suggestions are clamped: return within ±2 percentage points of baseline, volatility between 0.8× and 1.5× of baseline. The forecast itself is computed locally (section 7.8).
 - Only asset classes and rounded totals are sent to Gemini, never account numbers, transactions or names.
 - **Track record:** when an outlook's horizon passes, the app checks whether the real value landed inside the 10th to 90th range and shows the hit rate. About 80% is the target.
 - Every screen says it is model output, not investment advice.
@@ -204,8 +203,8 @@ Built for **iPhone and iPad in Safari**. Phone layout uses the 390px design widt
 
 | # | Scope | Done when |
 |---|---|---|
-| M0 | Repo scaffold copied from Bhag: Vite, React, PWA, oxlint, vitest, `deploy.yml` (no Supabase variables), new `base` path, design tokens from the canvas | Empty app is live on Pages and CI is green |
-| M1 | `src/core`: money, FY, all calculators in section 7 (1–6, 8), with tests | Tests match hand-checked figures |
+| M0 ✅ | Repo scaffold copied from Bhag: Vite, React, PWA, oxlint, vitest, `deploy.yml` (no Supabase variables), new `base` path, design tokens from the canvas | Empty app is live on Pages and CI is green |
+| M1 ✅ | `src/core`: money, FY, all calculators in section 7 (1–5, 7), with tests | Tests match hand-checked figures: ₹43,391 EMI on ₹50L at 8.5% for 20 years, NSC ₹1,000 → ₹1,449, PPF 5th-of-month rule, EPF month-end rule, ₹25L at 6% for 10 years → ₹44.77L |
 | M4a | **Pulled forward:** Apps Script, template sheet, parsers for the owner's banks with fixtures | A month of the owner's real alerts parses with nothing missed |
 | M2 | Vault: encryption, IndexedDB, Unlock screen, passkey, passphrase, recovery key, auto-lock | Survives reload, locks on time, wrong passphrase is refused |
 | M3 | Google sign-in, Picker, Drive backup and sync, devices list | An edit on the phone shows up on the Mac and the other way round |

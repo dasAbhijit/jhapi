@@ -77,8 +77,8 @@ Every requirement starts as **Planned**. The milestone column refers to the buil
 | E1 | The owner can add every asset and liability type in the Add entry picker, and search the list | M5 | Planned |
 | E2 | Each holding shows its value, how the value was found (price feed, statement, calculated, manual) and the date of that value | M5 | Planned |
 | E3 | EPF shows employee, employer and VPF shares, interest by declared rate per year credited on 31 March, EPS kept out of net worth, and reconciliation with the passbook | M5 | Planned |
-| E4 | PPF, NSC, SCSS, KVP, PO MIS, Sukanya Samriddhi, FD and RD values are calculated from their rates and dates | M1, M5 | Planned |
-| E5 | Loans show outstanding principal, EMI, rate, EMIs left, interest paid, and handle rate changes and prepayments | M1, M5 | Planned |
+| E4 | PPF, NSC, SCSS, KVP, PO MIS, Sukanya Samriddhi, FD and RD values are calculated from their rates and dates | M1, M5 | Auto (calculations, 11 tests). Screens planned |
+| E5 | Loans show outstanding principal, EMI, rate, EMIs left, interest paid, and handle rate changes and prepayments | M1, M5 | Auto (calculations, 6 tests). Screens planned |
 | E6 | Stocks, ETFs and SGBs are valued from daily prices; mutual funds from daily NAVs | M5 | Planned |
 | E7 | EMI and contribution emails update the matching loan or holding | M5 | Planned |
 | E8 | The owner can import a CAS statement PDF for mutual funds and demat holdings | M8 | Planned |
@@ -128,9 +128,9 @@ Every requirement starts as **Planned**. The milestone column refers to the buil
 
 | ID | Requirement | Verified |
 |---|---|---|
-| N1 | Money is stored as integer paise and every total adds up to the paisa | Planned |
+| N1 | Money is stored as integer paise and every total adds up to the paisa | Auto for the calculators (loan principal sums exactly, market values use exact arithmetic) |
 | N2 | No secret key is in the repo or the build. Only the restricted Google client ID and Picker key are public | Planned |
 | N3 | Built and tested first on Safari for iOS and iPadOS 18 and later. Also works on desktop Chrome | Planned |
 | N4 | Unlock to Dashboard in under 2 seconds with 5 years of data on a recent iPhone | Planned |
 | N5 | Accessible: real controls with labels, 44px touch targets, 4.5:1 text contrast | Planned |
-| N6 | Lint and all tests pass in CI before every deploy | Planned |
+| N6 | Lint and all tests pass in CI before every deploy | Set up in `deploy.yml`. Live once the repo is pushed |

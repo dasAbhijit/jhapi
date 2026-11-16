@@ -26,7 +26,7 @@ npm run icons    # rebuild PNG icons from public/favicon.svg (macOS)
 ## Layout
 
 ```
-src/core/       money and calculators (pure, tested)
+src/core/       money, dates and calculators: EPF/PPF/SSY, deposits, loans, goals, market (pure, tested)
 src/pages/      screens
 public/         icons (favicon.svg is the source)
 scripts/        helper scripts
