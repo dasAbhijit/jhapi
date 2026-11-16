@@ -138,6 +138,10 @@ Amounts are **rupees** in the sheet and integer **paise** in the app. Dates are 
   - Typing a `Value` overrides the calculation for loans and market holdings, e.g. the outstanding amount from the lender's statement.
 - Liabilities count as negative.
 
+**Net worth:** `Date`, `Net worth`, `Holdings`, `Bank balances`, `Loans`, `Retirement`, `Market`, `Deposits`, `Gold & other`. One row per day, written by the script at 7 AM (and by **Update prices now**), replacing that day's row if it runs again. The Home chart reads it.
+
+**Prices (auto):** a helper tab of `GOOGLEFINANCE` formulas the script rewrites each morning; not synced.
+
 Goals and outlooks (M6–M7) will get their own tabs in the same style.
 
 ## 7. Core logic (`src/core`)
@@ -200,7 +204,8 @@ Re-planned on 17 Nov 2026 when the owner chose the Google Sheet as the store.
 | M4b ✅ | Jhapi's own Apps Script (email reader with DKIM check, web app, onEdit), sheet layout, app sync (pull on open, push on edit, offline queue), Home, Transactions, Needs review, Add/edit, Settings | Script tests on fake Google pass, the app ↔ script round-trip test passes, deployed |
 | M4c | ✅ Owner's category rules (Rules tab, "Always use…"), transfer pairing between own accounts, receipts improving bank rows. Still to do: live on the owner's sheet, a week of real mail | A week of real mail reads with nothing missed |
 | M5a ✅ | Holdings tab synced both ways; Portfolio and add/edit screens; values from the M1 calculators; net worth on Home (holdings + bank balances from emails − loans) | Round trip: a PPF added in the app shows the right value and lands in the sheet |
-| M5b | Prices: daily AMFI NAVs for funds with a scheme code, GOOGLEFINANCE for stocks and ETFs; EPF/PPF rates by year; daily net worth snapshots and the Home time-range chart | Dashboard matches the sum of the owner's accounts |
+| M5b ✅ | Prices every morning (AMFI NAVs by scheme code; GOOGLEFINANCE by symbol, through a helper tab), daily net worth snapshots, Home chart with 1M/3M/6M/1Y/FY/All, Update prices now | Script tests on fake Google (AMFI file, GOOGLEFINANCE, AMFI down, same-day rerun) |
+| M5c | EPF/PPF/SSY declared rates by year; loan rate changes and prepayments entered in the app; CAS statement import | Owner's EPF and loan match their statements |
 | M6 | Goals, goal tagging, forecast worker | Goal detail matches the design |
 | M7 | AI Outlook and Gemini fallback for unparsed emails | Outlook screens work with a real key |
 | M8 | Encryption on the device (passphrase or passkey), CAS PDF import, CSV export, user guide in `docs/` synced to GitBook | Installed on the owner's phone and in daily use |
@@ -218,6 +223,7 @@ Re-planned on 17 Nov 2026 when the owner chose the Google Sheet as the store.
 | The web app answers anyone who has the URL and code | 64-character random code, constant-time check, never in the repo or the sheet; Disconnect removes it from a device; a new code can be made in Script properties |
 | **Jhapi and Bhag share the browser origin `dasabhijit.github.io`** (GitHub Pages serves both from one host). Their saved keys do not collide (`jhapi.*`), but the browser lets pages on one origin read each other's storage, so Bhag's code could read Jhapi's saved secret code | Open, owner to decide. Options: a custom domain for Jhapi (e.g. `jhapi.<your-domain>`, still on GitHub Pages), or hosting Jhapi under a separate GitHub account or organisation. Both give Jhapi its own origin |
 | A device clock far behind Google's | Its edits look older than the sheet's rows and lose. Phones set their clocks from the network, so this is rare; the app says when an edit was not saved |
+| AMFI or Google Finance unavailable or changes format | The day's prices are skipped and the Log says why; holdings keep their last price and date |
 | Script and app disagree about an email | The script runs the app's own bundled parsers; CI fails if `Code.gs` is stale |
 
 ## 12. Open questions

@@ -16,6 +16,8 @@ export interface Store {
   disconnect(): void
   sync(): Promise<void>
   readInbox(): Promise<void>
+  refreshPrices(): Promise<void>
+  refreshingPrices: boolean
   saveTxn(t: Txn): void
   saveHolding(h: Holding): void
   /** Save a category rule; with `apply`, also recategorise other transactions from the same payee. */

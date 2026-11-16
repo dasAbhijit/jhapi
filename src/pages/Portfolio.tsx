@@ -8,7 +8,7 @@ import { NotConnected, SyncLine } from '../ui/bits'
 const BADGE = { calc: 'CALC', price: 'PRICE', manual: 'MANUAL', loan: 'EMI' } as const
 
 export default function Portfolio() {
-  const { config, data } = useStore()
+  const { config, data, refreshPrices, refreshingPrices } = useStore()
   if (!config) return <NotConnected />
   const today = todayIST()
   const s = summarise(data?.holdings ?? [], today)
@@ -58,7 +58,12 @@ export default function Portfolio() {
           ))}
         </div>
       )}
-      <p className="muted small">CALC = from rate and dates · PRICE = units × price · EMI = from the loan schedule · MANUAL = the value you entered. Estimates, not statements.</p>
+      {s.byClass.some((g) => g.items.some((x) => x.holding.code)) && (
+        <button type="button" className="btn" disabled={refreshingPrices} onClick={() => void refreshPrices()}>
+          {refreshingPrices ? 'Updating prices…' : 'Update prices now'}
+        </button>
+      )}
+      <p className="muted small">CALC = from rate and dates · PRICE = units × price (updated every morning for funds with an AMFI code and stocks with a symbol) · EMI = from the loan schedule · MANUAL = the value you entered. Estimates, not statements.</p>
     </div>
   )
 }

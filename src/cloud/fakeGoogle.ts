@@ -37,6 +37,7 @@ export function makeSheet(name: string, events: string[]) {
     getMaxRows: () => s.maxRows,
     getMaxColumns: () => s.maxCols,
     insertRowsAfter: (_: number, n: number) => { s.maxRows += n },
+    clearContents: () => { s.grid = [] },
     insertColumnsAfter: (_: number, n: number) => { s.maxCols += n },
     setFrozenRows: (n: number) => { s.frozen = n },
     deleteRows: (start: number, n: number) => { s.grid.splice(start - 1, n) },
@@ -84,6 +85,10 @@ export function makeEnv(opts: { token?: string } = {}) {
   const messages: FakeMessage[] = []
   const queries: string[] = []
   const clock = { t: Date.parse('2026-11-17T10:00:00Z') }
+  /** What the fake web returns, by URL; and what GOOGLEFINANCE returns, by symbol. */
+  const web: Record<string, { code: number; body: string }> = {}
+  const quotes: Record<string, number> = {}
+  const fetched: string[] = []
 
   const ss = {
     getName: () => 'Jhapi',
@@ -105,6 +110,15 @@ export function makeEnv(opts: { token?: string } = {}) {
   const ctx: Record<string, unknown> = {
     SpreadsheetApp: {
       getActiveSpreadsheet: () => ss,
+      // Formulas are worked out on flush: only =GOOGLEFINANCE("SYM","price") is understood.
+      flush: () => {
+        for (const sh of Object.values(sheets)) {
+          sh.grid = sh.grid.map((row) => row.map((c) => {
+            const m = typeof c === 'string' ? /^=GOOGLEFINANCE\("([^"]+)","price"\)$/.exec(c) : null
+            return m ? (m[1] in quotes ? quotes[m[1]] : '#N/A') : c
+          }))
+        }
+      },
       getUi: () => { throw new Error('No UI when run from a trigger or a test') },
     },
     PropertiesService: {
@@ -116,7 +130,7 @@ export function makeEnv(opts: { token?: string } = {}) {
     ScriptApp: {
       getProjectTriggers: () => triggers.map((h) => ({ getHandlerFunction: () => h })),
       newTrigger: (h: string) => {
-        const b = { timeBased: () => b, everyMinutes: () => b, create: () => { triggers.push(h) } }
+        const b = { timeBased: () => b, everyMinutes: () => b, everyDays: () => b, atHour: () => b, create: () => { triggers.push(h) } }
         return b
       },
     },
@@ -136,6 +150,13 @@ export function makeEnv(opts: { token?: string } = {}) {
     LockService: { getScriptLock: () => ({ waitLock() {}, tryLock: () => true, releaseLock() {} }) },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (text: string) => ({ text, setMimeType() { return this } }) },
     Utilities: { getUuid: () => randomUUID() },
+    UrlFetchApp: {
+      fetch: (url: string) => {
+        fetched.push(url)
+        const r = web[url] ?? { code: 404, body: '' }
+        return { getResponseCode: () => r.code, getContentText: () => r.body }
+      },
+    },
     Logger: { log: (m: string) => logs.push(m) },
   }
   vm.createContext(ctx)
@@ -147,7 +168,7 @@ export function makeEnv(opts: { token?: string } = {}) {
     JSON.parse((fn('doPost')({ postData: { contents: typeof body === 'string' ? body : JSON.stringify(body) } }) as { text: string }).text)
   const tab = (name: string) => sheets[name]?.grid.filter((r) => r.some((c) => c !== '' && c !== null)) ?? []
 
-  return { ctx, fn, call, sheets, tab, props, triggers, logs, messages, queries, clock, events }
+  return { ctx, fn, call, sheets, tab, props, triggers, logs, messages, queries, clock, events, web, quotes, fetched }
 }
 
 /** An Authentication-Results line as Gmail writes it. */

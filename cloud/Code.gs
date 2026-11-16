@@ -28,6 +28,8 @@ var JhapiCore = (() => {
     HOLDING_HEADERS: () => HOLDING_HEADERS,
     HOLDING_TYPES: () => HOLDING_TYPES,
     LOG_TAB: () => LOG_TAB,
+    NETWORTH_HEADERS: () => NETWORTH_HEADERS,
+    NETWORTH_TAB: () => NETWORTH_TAB,
     REVIEW_HEADERS: () => REVIEW_HEADERS,
     REVIEW_TAB: () => REVIEW_TAB,
     RULES_HEADERS: () => RULES_HEADERS,
@@ -45,16 +47,22 @@ var JhapiCore = (() => {
     holdingToRow: () => holdingToRow,
     isDuplicate: () => isDuplicate,
     mergeById: () => mergeById,
+    netWorthSnapshot: () => netWorthSnapshot,
     pairTransfers: () => pairTransfers,
+    parseAmfiNav: () => parseAmfiNav,
     parseEmail: () => parseEmail,
+    priceKey: () => priceKey,
+    priceUpdates: () => priceUpdates,
     reviewToRow: () => reviewToRow,
     rowToHolding: () => rowToHolding,
     rowToReview: () => rowToReview,
     rowToRule: () => rowToRule,
+    rowToSnapshot: () => rowToSnapshot,
     rowToStatement: () => rowToStatement,
     rowToTxn: () => rowToTxn,
     ruleCategory: () => ruleCategory,
     ruleToRow: () => ruleToRow,
+    snapshotToRow: () => snapshotToRow,
     statementFromParsed: () => statementFromParsed,
     statementToRow: () => statementToRow,
     txnFromParsed: () => txnFromParsed,
@@ -74,6 +82,40 @@ var JhapiCore = (() => {
   }
   function daysInMonth(y, m) {
     return new Date(Date.UTC(y, m, 0)).getUTCDate();
+  }
+  function addMonths(date, months) {
+    const { y, m, d } = parseDate(date);
+    const total = y * 12 + (m - 1) + months;
+    const ny = Math.floor(total / 12);
+    const nm = total % 12 + 1;
+    return formatDate({ y: ny, m: nm, d: Math.min(d, daysInMonth(ny, nm)) });
+  }
+  function daysBetween(from, to) {
+    const a = parseDate(from);
+    const b = parseDate(to);
+    return Math.round((Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / 864e5);
+  }
+  function monthIndex(date) {
+    const { y, m } = parseDate(date);
+    return y * 12 + (m - 1);
+  }
+  function monthsBetween(from, to) {
+    return monthIndex(to) - monthIndex(from);
+  }
+  function financialYear(date) {
+    const { y, m } = parseDate(date);
+    return financialYearStarting(m >= 4 ? y : y - 1);
+  }
+  function financialYearStarting(startYear) {
+    return {
+      startYear,
+      start: `${startYear}-04-01`,
+      end: `${startYear + 1}-03-31`,
+      label: `FY ${startYear}–${String((startYear + 1) % 100).padStart(2, "0")}`
+    };
+  }
+  function minDate(a, b) {
+    return a <= b ? a : b;
   }
 
   // src/core/parsers/text.ts
@@ -892,6 +934,206 @@ var JhapiCore = (() => {
     return out;
   }
 
+  // src/core/deposits.ts
+  var PERIODS = { monthly: 12, quarterly: 4, "half-yearly": 2, yearly: 1 };
+  function grow(principal, ratePct, compounding, days) {
+    const n = PERIODS[compounding];
+    return principal * Math.pow(1 + ratePct / 100 / n, n * days / 365);
+  }
+  function depositValue(input, asOf) {
+    const { principalPaise: p, ratePct, compounding, start, maturity } = input;
+    if (input.payout) return { valuePaise: p, maturityValuePaise: p, matured: asOf >= maturity };
+    const until = minDate(asOf, maturity);
+    const days = Math.max(0, daysBetween(start, until));
+    return {
+      valuePaise: Math.round(grow(p, ratePct, compounding, days)),
+      maturityValuePaise: Math.round(grow(p, ratePct, compounding, daysBetween(start, maturity))),
+      matured: asOf >= maturity
+    };
+  }
+  function recurringDepositValue(input, asOf) {
+    var _a;
+    const { installmentPaise, ratePct, start, months } = input;
+    const compounding = (_a = input.compounding) != null ? _a : "quarterly";
+    const maturity = addMonths(start, months);
+    const until = minDate(asOf, maturity);
+    let value = 0;
+    let atMaturity = 0;
+    for (let i = 0; i < months; i++) {
+      const due = addMonths(start, i);
+      atMaturity += grow(installmentPaise, ratePct, compounding, daysBetween(due, maturity));
+      if (due <= until) value += grow(installmentPaise, ratePct, compounding, daysBetween(due, until));
+    }
+    return { valuePaise: Math.round(value), maturityValuePaise: Math.round(atMaturity), matured: asOf >= maturity };
+  }
+
+  // src/core/money.ts
+  function roundToRupee(paise) {
+    return Math.round(paise / 100) * 100;
+  }
+
+  // src/core/loans.ts
+  function emi(principalPaise, ratePct, months) {
+    if (months <= 0) throw new Error("months must be positive");
+    const r = ratePct / 100 / 12;
+    if (r === 0) return roundToRupee(principalPaise / months);
+    const f = Math.pow(1 + r, months);
+    return roundToRupee(principalPaise * r * f / (f - 1));
+  }
+  function monthsToRepay(balancePaise, ratePct, emiPaise) {
+    const r = ratePct / 100 / 12;
+    if (r === 0) return Math.ceil(balancePaise / emiPaise);
+    if (emiPaise <= balancePaise * r) return Infinity;
+    return Math.ceil(-Math.log(1 - balancePaise * r / emiPaise) / Math.log(1 + r));
+  }
+  function loanSchedule(input) {
+    var _a;
+    const events = [...(_a = input.events) != null ? _a : []].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+    let balance = input.principalPaise;
+    let rate = input.ratePct;
+    let emiNow = emi(balance, rate, input.months);
+    let endN = input.months;
+    const rows = [];
+    let ei = 0;
+    let prevDate = addMonths(input.firstEmiDate, -1);
+    for (let n = 1; balance > 0 && n <= 1200; n++) {
+      const date = addMonths(input.firstEmiDate, n - 1);
+      let prepay = 0;
+      while (ei < events.length && events[ei].date <= date) {
+        const e = events[ei++];
+        if (e.date <= prevDate) continue;
+        if (e.kind === "prepayment") {
+          const amt = Math.min(e.amountPaise, balance);
+          balance -= amt;
+          prepay += amt;
+        } else {
+          rate = e.ratePct;
+        }
+        const remaining = Math.max(1, endN - n + 1);
+        if (balance === 0) break;
+        if (e.adjust === "emi") {
+          emiNow = emi(balance, rate, remaining);
+        } else {
+          const m = monthsToRepay(balance, rate, emiNow);
+          if (m === Infinity) emiNow = emi(balance, rate, remaining);
+          else endN = n - 1 + m;
+        }
+      }
+      if (balance === 0) {
+        rows.push({ n, date, ratePct: rate, emiPaise: 0, interestPaise: 0, principalPaise: 0, prepaymentPaise: prepay, balancePaise: 0 });
+        break;
+      }
+      const interest = roundToRupee(balance * rate / 100 / 12);
+      let principal = emiNow - interest;
+      if (principal >= balance || n >= endN) principal = balance;
+      balance -= principal;
+      rows.push({
+        n,
+        date,
+        ratePct: rate,
+        emiPaise: principal + interest,
+        interestPaise: interest,
+        principalPaise: principal,
+        prepaymentPaise: prepay,
+        balancePaise: balance
+      });
+      prevDate = date;
+    }
+    return rows;
+  }
+  function loanStatus(input, asOf) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+    const rows = loanSchedule(input);
+    const paid = rows.filter((r) => r.date <= asOf);
+    const left = rows.filter((r) => r.date > asOf && r.emiPaise > 0);
+    const last = paid.at(-1);
+    return {
+      outstandingPaise: last ? last.balancePaise : input.principalPaise,
+      emiPaise: (_b = (_a = left[0]) == null ? void 0 : _a.emiPaise) != null ? _b : 0,
+      ratePct: (_e = (_d = (_c = left[0]) == null ? void 0 : _c.ratePct) != null ? _d : last == null ? void 0 : last.ratePct) != null ? _e : input.ratePct,
+      emisPaid: paid.filter((r) => r.emiPaise > 0).length,
+      emisLeft: left.length,
+      interestPaidPaise: paid.reduce((s, r) => s + r.interestPaise, 0),
+      principalRepaidPaise: paid.reduce((s, r) => s + r.principalPaise + r.prepaymentPaise, 0),
+      nextEmiDate: (_g = (_f = left[0]) == null ? void 0 : _f.date) != null ? _g : null,
+      lastEmiDate: (_i = (_h = rows.at(-1)) == null ? void 0 : _h.date) != null ? _i : null
+    };
+  }
+
+  // src/core/market.ts
+  function marketValue(units, pricePaise) {
+    var _a;
+    const m = /^(\d+)(?:\.(\d{1,6}))?$/.exec(units.trim());
+    if (!m) throw new Error(`Bad units: ${units}`);
+    const frac = ((_a = m[2]) != null ? _a : "").padEnd(6, "0");
+    const MICRO = BigInt(1e6);
+    const micro = BigInt(m[1]) * MICRO + BigInt(frac);
+    const v = micro * BigInt(pricePaise);
+    return Number((v + BigInt(5e5)) / MICRO);
+  }
+
+  // src/core/savings.ts
+  function rateFor(fy, rates) {
+    if (rates[fy] !== void 0) return { ratePct: rates[fy], estimate: false };
+    const known = Object.keys(rates).map(Number).filter((y) => y <= fy);
+    const fallback = known.length ? Math.max(...known) : Math.min(...Object.keys(rates).map(Number));
+    if (!Number.isFinite(fallback)) throw new Error("No declared rates entered");
+    return { ratePct: rates[fallback], estimate: true };
+  }
+  function countsFromMonth(scheme, flow) {
+    const mi = monthIndex(flow.date);
+    if (scheme === "epf") return mi;
+    if (flow.amountPaise > 0 && parseDate(flow.date).d > 5) return mi + 1;
+    return mi;
+  }
+  function annualCreditValue(input) {
+    const { scheme, openingDate, asOf } = input;
+    const opening = parseDate(openingDate);
+    if (opening.m !== 4 || opening.d !== 1) throw new Error("openingDate must be 1 April");
+    const flows = input.flows.filter((f) => f.date >= openingDate && f.date <= asOf).map((f) => ({ ...f, from: countsFromMonth(scheme, f) }));
+    const lastFy = financialYear(asOf).startYear;
+    const asOfMonth = monthIndex(asOf);
+    const asOfIsYearEnd = asOf === financialYearStarting(lastFy).end;
+    let credited = input.openingBalancePaise;
+    let accrued = 0;
+    const credits = [];
+    for (let fy = opening.y; fy <= lastFy; fy++) {
+      const { ratePct, estimate } = rateFor(fy, input.ratesByFy);
+      const firstMonth = fy * 12 + 3;
+      const lastMonth = firstMonth + 11;
+      const yearFlows = flows.filter((f) => f.date >= financialYearStarting(fy).start && f.date <= financialYearStarting(fy).end);
+      let interest = 0;
+      for (let mi = firstMonth; mi <= Math.min(lastMonth, asOfMonth); mi++) {
+        const monthComplete = mi < asOfMonth || mi === asOfMonth && isLastDayOfMonth(asOf);
+        if (!monthComplete) break;
+        const counted = credited + yearFlows.filter((f) => f.from <= mi).reduce((s, f) => s + f.amountPaise, 0);
+        interest += Math.max(0, counted) * ratePct / 100 / 12;
+      }
+      const yearFlowTotal = yearFlows.reduce((s, f) => s + f.amountPaise, 0);
+      const yearDone = fy < lastFy || asOfIsYearEnd;
+      if (yearDone) {
+        const interestPaise = roundToRupee(interest);
+        credits.push({ fyStartYear: fy, ratePct, rateIsEstimate: estimate, interestPaise });
+        credited += yearFlowTotal + interestPaise;
+      } else {
+        credited += yearFlowTotal;
+        accrued = Math.round(interest);
+        if (estimate || interest > 0) credits.push({ fyStartYear: fy, ratePct, rateIsEstimate: estimate, interestPaise: 0 });
+      }
+    }
+    return {
+      balancePaise: credited,
+      accruedPaise: accrued,
+      valuePaise: credited + accrued,
+      credits,
+      usesEstimate: credits.some((c) => c.rateIsEstimate)
+    };
+  }
+  function isLastDayOfMonth(date) {
+    const { y, m, d } = parseDate(date);
+    return d === new Date(Date.UTC(y, m, 0)).getUTCDate();
+  }
+
   // src/core/holdings.ts
   var HOLDING_TYPES = {
     epf: { label: "EPF / VPF", cls: "retirement", method: "calc", fields: ["institution", "investedPaise", "startDate", "ratePct", "monthlyPaise"] },
@@ -919,6 +1161,98 @@ var JhapiCore = (() => {
     education_loan: { label: "Education loan", cls: "liabilities", method: "loan", fields: ["institution", "investedPaise", "ratePct", "tenureMonths", "startDate"] },
     borrowed: { label: "Money borrowed / other dues", cls: "liabilities", method: "manual", fields: ["valuePaise", "valueDate"] }
   };
+  function monthlyFlows(start, monthlyPaise, until) {
+    const flows = [];
+    const n = monthsBetween(start, until);
+    for (let i = 1; i <= n; i++) {
+      const date = addMonths(start, i).slice(0, 8) + "01";
+      if (date <= until) flows.push({ date, amountPaise: monthlyPaise });
+    }
+    return flows;
+  }
+  function valueHolding(h, today) {
+    const info = HOLDING_TYPES[h.type];
+    const sign = info.cls === "liabilities" ? -1 : 1;
+    const manual = () => h.valuePaise !== null ? { valuePaise: sign * h.valuePaise, method: "manual", asOf: h.valueDate, detail: "Your value" } : { valuePaise: 0, method: "manual", asOf: "", detail: "", missing: "Enter the current value" };
+    switch (info.method) {
+      case "manual":
+        return manual();
+      case "price": {
+        if (h.units && h.pricePaise !== null) {
+          try {
+            return { valuePaise: marketValue(h.units, h.pricePaise), method: "price", asOf: h.priceDate, detail: `${h.units} units` };
+          } catch {
+            return { ...manual(), missing: "Units must be a number like 123.456" };
+          }
+        }
+        if (h.valuePaise !== null) return manual();
+        return { valuePaise: 0, method: "price", asOf: "", detail: "", missing: "Enter units and price, or the current value" };
+      }
+      case "loan": {
+        if (h.valuePaise !== null) return manual();
+        if (!h.investedPaise || h.ratePct === null || !h.tenureMonths || !h.startDate) {
+          return { valuePaise: 0, method: "loan", asOf: "", detail: "", missing: "Enter amount borrowed, rate, months and first EMI date" };
+        }
+        const s = loanStatus({ principalPaise: h.investedPaise, ratePct: h.ratePct, months: h.tenureMonths, firstEmiDate: h.startDate }, today);
+        return {
+          valuePaise: -s.outstandingPaise,
+          method: "loan",
+          asOf: today,
+          detail: `${s.emisLeft} EMIs left${s.nextEmiDate ? `, next ${s.nextEmiDate}` : ""}`
+        };
+      }
+      case "calc": {
+        if (h.ratePct === null || !h.startDate) return { ...manual(), missing: h.valuePaise === null ? "Enter rate and start date" : void 0 };
+        if (h.type === "epf" || h.type === "ppf" || h.type === "ssy") {
+          if (h.investedPaise === null) return { valuePaise: 0, method: "calc", asOf: "", detail: "", missing: "Enter the balance on the start date" };
+          const fy = financialYear(h.startDate);
+          const r = annualCreditValue({
+            scheme: h.type,
+            openingBalancePaise: h.investedPaise,
+            openingDate: fy.start,
+            flows: h.monthlyPaise ? monthlyFlows(h.startDate, h.monthlyPaise, today) : [],
+            ratesByFy: { [fy.startYear]: h.ratePct },
+            asOf: today < fy.start ? fy.start : today
+          });
+          return {
+            valuePaise: r.valuePaise,
+            method: "calc",
+            asOf: today,
+            detail: `Estimated at ${h.ratePct}% from ${financialYearStarting(fy.startYear).label}${r.usesEstimate ? ", same rate assumed for later years" : ""}`
+          };
+        }
+        if (h.type === "rd") {
+          if (!h.monthlyPaise || !h.tenureMonths) return { valuePaise: 0, method: "calc", asOf: "", detail: "", missing: "Enter installment and months" };
+          const v2 = recurringDepositValue({ installmentPaise: h.monthlyPaise, ratePct: h.ratePct, start: h.startDate, months: h.tenureMonths }, today);
+          return { valuePaise: v2.valuePaise, method: "calc", asOf: today, detail: v2.matured ? "Matured" : `Matures at ${Math.round(v2.maturityValuePaise / 100)}` };
+        }
+        if (h.investedPaise === null || !h.maturityDate) return { ...manual(), missing: h.valuePaise === null ? "Enter amount, rate, start and maturity" : void 0 };
+        const v = depositValue(
+          {
+            principalPaise: h.investedPaise,
+            ratePct: h.ratePct,
+            compounding: h.compounding || info.compounding || "quarterly",
+            payout: h.payout || info.payout === true,
+            start: h.startDate,
+            maturity: h.maturityDate
+          },
+          today
+        );
+        return { valuePaise: v.valuePaise, method: "calc", asOf: today, detail: v.matured ? "Matured: move the money or close this" : `Calculated at ${h.ratePct}%` };
+      }
+    }
+  }
+  function summarise(holdings, today) {
+    const live = holdings.filter((h) => !h.deleted);
+    const order = ["retirement", "market", "deposits", "gold_other", "liabilities"];
+    const byClass = order.map((cls) => {
+      const items = live.filter((h) => HOLDING_TYPES[h.type].cls === cls).map((h) => ({ holding: h, valuation: valueHolding(h, today) }));
+      return { cls, totalPaise: items.reduce((s, x) => s + x.valuation.valuePaise, 0), items };
+    }).filter((g) => g.items.length > 0);
+    const assets = byClass.filter((g) => g.cls !== "liabilities").reduce((s, g) => s + g.totalPaise, 0);
+    const liabilities = byClass.filter((g) => g.cls === "liabilities").reduce((s, g) => s + g.totalPaise, 0);
+    return { assetsPaise: assets, liabilitiesPaise: liabilities, netPaise: assets + liabilities, byClass };
+  }
 
   // src/core/sheetRows.ts
   var TXN_TAB = "Transactions";
@@ -1182,6 +1516,105 @@ var JhapiCore = (() => {
       }
     };
   }
+  var NETWORTH_TAB = "Net worth";
+  var NETWORTH_HEADERS = ["Date", "Net worth", "Holdings", "Bank balances", "Loans", "Retirement", "Market", "Deposits", "Gold & other"];
+  TEXT_COLUMNS[NETWORTH_TAB] = ["Date"];
+  function snapshotToRow(s) {
+    return [
+      s.date,
+      rupees(s.netPaise),
+      rupees(s.holdingsPaise),
+      rupees(s.bankPaise),
+      rupees(s.liabilitiesPaise),
+      rupees(s.byClass.retirement),
+      rupees(s.byClass.market),
+      rupees(s.byClass.deposits),
+      rupees(s.byClass.gold_other)
+    ];
+  }
+  function rowToSnapshot(row, headers) {
+    const get = (h) => {
+      var _a;
+      return (_a = paiseFrom(row[headers.indexOf(h)])) != null ? _a : 0;
+    };
+    const date = readDate(row[headers.indexOf("Date")]);
+    if (!date) return null;
+    return {
+      date,
+      netPaise: get("Net worth"),
+      holdingsPaise: get("Holdings"),
+      bankPaise: get("Bank balances"),
+      liabilitiesPaise: get("Loans"),
+      byClass: { retirement: get("Retirement"), market: get("Market"), deposits: get("Deposits"), gold_other: get("Gold & other") }
+    };
+  }
+
+  // src/core/prices.ts
+  function parseAmfiNav(text) {
+    const out = /* @__PURE__ */ new Map();
+    for (const line of text.split(/\r?\n/)) {
+      const parts = line.split(";");
+      if (parts.length < 6 || !/^\d+$/.test(parts[0].trim())) continue;
+      const nav = Number(parts[4].trim());
+      const date = looseDate(parts[5].trim());
+      if (!Number.isFinite(nav) || nav <= 0 || !date) continue;
+      out.set(parts[0].trim(), { pricePaise: Math.round(nav * 100), date });
+    }
+    return out;
+  }
+  function priceKey(h) {
+    if (h.deleted) return null;
+    const code = h.code.trim();
+    if (!code) return null;
+    if (h.type === "mf") return /^\d{4,7}$/.test(code) ? { source: "amfi", key: code } : null;
+    if (h.type === "stock" || h.type === "etf" || h.type === "sgb") {
+      const sym = code.toUpperCase().replace(/\s+/g, "");
+      if (!/^([A-Z]+:)?[A-Z0-9&._-]{1,20}$/.test(sym)) return null;
+      return { source: "google", key: sym.includes(":") ? sym : `NSE:${sym}` };
+    }
+    return null;
+  }
+  function priceUpdates(holdings, amfi, google) {
+    const out = [];
+    for (const h of holdings) {
+      const k = priceKey(h);
+      if (!k) continue;
+      const q = (k.source === "amfi" ? amfi : google).get(k.key);
+      if (!q) continue;
+      if (q.pricePaise === h.pricePaise && q.date === h.priceDate) continue;
+      out.push({ id: h.id, pricePaise: q.pricePaise, priceDate: q.date });
+    }
+    return out;
+  }
+
+  // src/core/networth.ts
+  function bankBalances(txns) {
+    const out = /* @__PURE__ */ new Map();
+    for (const t of txns) {
+      if (!counts(t) || t.balancePaise === null || !t.account.includes("-bank-")) continue;
+      const key = t.date + " " + (t.time || "00:00:00");
+      const cur = out.get(t.account);
+      if (!cur || key >= cur.key) out.set(t.account, { balancePaise: t.balancePaise, date: t.date, key });
+    }
+    return new Map([...out].map(([k, v]) => [k, { balancePaise: v.balancePaise, date: v.date }]));
+  }
+  function netWorthSnapshot(holdings, txns, date) {
+    const s = summarise(holdings, date);
+    let bank = 0;
+    for (const b of bankBalances(txns).values()) bank += b.balancePaise;
+    const cls = (c) => {
+      var _a, _b;
+      return (_b = (_a = s.byClass.find((g) => g.cls === c)) == null ? void 0 : _a.totalPaise) != null ? _b : 0;
+    };
+    return {
+      date,
+      netPaise: s.netPaise + bank,
+      holdingsPaise: s.assetsPaise,
+      bankPaise: bank,
+      liabilitiesPaise: s.liabilitiesPaise,
+      byClass: { retirement: cls("retirement"), market: cls("market"), deposits: cls("deposits"), gold_other: cls("gold_other") }
+    };
+  }
   return __toCommonJS(entry_exports);
 })();
 
@@ -1193,13 +1626,15 @@ var JhapiCore = (() => {
  *    and adds rows to the Transactions, Statements and Review tabs.
  * 2. As a web app it answers the Jhapi app: `pull` returns every row, `push` merges the app's
  *    changes row by row (the newer edit wins). Every call needs the secret code in Script properties.
- * 3. `onEdit` stamps rows edited by hand with an ID and an Updated time, so edits made in the sheet
+ * 3. Every morning `refreshPrices` updates fund NAVs (AMFI) and stock prices (GOOGLEFINANCE), then saves the
+ *    day's net worth in the Net worth tab.
+ * 4. `onEdit` stamps rows edited by hand with an ID and an Updated time, so edits made in the sheet
  *    flow back to the app.
  *
  * Setup: docs/admin/setup.md in the Jhapi repo. Nothing here is shared with any other app or sheet.
  */
 
-/* oxlint-disable no-unused-vars -- Apps Script calls onOpen, setup, doGet, doPost, onEdit and readInbox by name. */
+/* oxlint-disable no-unused-vars -- Apps Script calls onOpen, setup, doGet, doPost, onEdit, readInbox and refreshPrices by name. */
 
 var J = JhapiCore;
 var TOKEN_PROP = 'JHAPI_TOKEN';
@@ -1213,6 +1648,8 @@ var MAX_BODY_CHARS = 5 * 1024 * 1024;
 var MAX_RECORDS_PER_PUSH = 5000;
 var MAX_REVIEW_TEXT = 4000;
 var MAX_LOG_ROWS = 500;
+var AMFI_URL = 'https://www.amfiindia.com/spages/NAVAll.txt';
+var PRICES_TAB = 'Prices (auto)';
 var TIDY_DAYS = 45; // how far back transfer pairing and receipt matching look after each email run
 
 var TABS = [
@@ -1221,6 +1658,7 @@ var TABS = [
   { name: J.REVIEW_TAB, headers: J.REVIEW_HEADERS },
   { name: J.RULES_TAB, headers: J.RULES_HEADERS },
   { name: J.HOLDINGS_TAB, headers: J.HOLDING_HEADERS },
+  { name: J.NETWORTH_TAB, headers: J.NETWORTH_HEADERS },
   { name: J.LOG_TAB, headers: ['Time', 'Event'] },
 ];
 
@@ -1231,6 +1669,7 @@ function onOpen() {
     .createMenu('Jhapi')
     .addItem('Set up / show secret code', 'setup')
     .addItem('Read bank emails now', 'readInbox')
+    .addItem('Update prices and net worth now', 'refreshPrices')
     .addToUi();
 }
 
@@ -1247,7 +1686,11 @@ function setup() {
     return t.getHandlerFunction() === 'readInbox';
   });
   if (!hasTrigger) ScriptApp.newTrigger('readInbox').timeBased().everyMinutes(10).create();
-  log_('Set up: tabs ready, bank emails checked every 10 minutes.');
+  var hasPrices = ScriptApp.getProjectTriggers().some(function (t) {
+    return t.getHandlerFunction() === 'refreshPrices';
+  });
+  if (!hasPrices) ScriptApp.newTrigger('refreshPrices').timeBased().everyDays(1).atHour(7).create();
+  log_('Set up: tabs ready, bank emails checked every 10 minutes, prices and net worth every morning.');
   var msg =
     'Secret code for the Jhapi app:\n\n' + token +
     '\n\nNext: Deploy > New deployment > Web app. Execute as: Me. Who has access: Anyone.' +
@@ -1304,6 +1747,10 @@ function doPost(e) {
     if (body.action === 'push') {
       validatePush_(body);
       return reply_(withLock_(function () { return push_(body); }));
+    }
+    if (body.action === 'refreshPrices') {
+      refreshPrices();
+      return reply_(withLock_(pull_));
     }
     if (body.action === 'readInbox') {
       readInbox();
@@ -1512,6 +1959,7 @@ function pull_() {
     review: loadReview_().items.map(function (x) { return x.item; }),
     rules: loadRules_(t.problems).items.map(function (x) { return x.rec; }),
     holdings: loadHoldings_(t.problems).items.map(function (x) { return x.rec; }),
+    netWorth: loadSnapshots_(),
     problems: t.problems,
   };
 }
@@ -1803,6 +2251,114 @@ function tidyRecent_() {
     writeRows_(state.tab.sheet, J.TXN_TAB, state.tab.headers, x.row, [J.txnToRow(x.txn)]);
   });
   return Object.keys(changed).length;
+}
+
+// ---------- prices and net worth ----------
+
+function todayIST_() {
+  return new Date(nowMs_() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+function loadSnapshots_() {
+  var tab = readTab_(J.NETWORTH_TAB);
+  var out = [];
+  tab.rows.forEach(function (row) {
+    var s = J.rowToSnapshot(row, tab.headers);
+    if (s) out.push(s);
+  });
+  return out;
+}
+
+/** Runs every morning: new prices for market holdings, then today's net worth. Never touches email. */
+function refreshPrices() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return { ok: false, error: 'Another run is in progress.' };
+  try {
+    return refreshPricesLocked_();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function refreshPricesLocked_() {
+  ensureTabs_();
+  var state = loadHoldings_();
+  var holdings = state.items.map(function (x) { return x.rec; });
+  var notes = [];
+
+  var amfi = new Map();
+  var wantsAmfi = holdings.some(function (h) { var k = J.priceKey(h); return k && k.source === 'amfi'; });
+  if (wantsAmfi) {
+    try {
+      var res = UrlFetchApp.fetch(AMFI_URL, { muteHttpExceptions: true, followRedirects: true });
+      if (res.getResponseCode() === 200) amfi = J.parseAmfiNav(res.getContentText());
+      else notes.push('AMFI NAVs not fetched (HTTP ' + res.getResponseCode() + ')');
+    } catch (e) {
+      notes.push('AMFI NAVs not fetched (' + String((e && e.message) || e).slice(0, 100) + ')');
+    }
+  }
+  var google = googlePrices_(holdings, notes);
+
+  var updates = J.priceUpdates(holdings, amfi, google);
+  var byId = {};
+  state.items.forEach(function (x) { byId[x.rec.id] = x; });
+  var stamp = nowIso_();
+  updates.forEach(function (u) {
+    var x = byId[u.id];
+    x.rec.pricePaise = u.pricePaise;
+    x.rec.priceDate = u.priceDate;
+    x.rec.updatedAt = stamp;
+    writeRows_(state.tab.sheet, J.HOLDINGS_TAB, state.tab.headers, x.row, [J.holdingToRow(x.rec)]);
+  });
+
+  var snap = J.netWorthSnapshot(holdings, loadTxns_().items.map(function (x) { return x.txn; }), todayIST_());
+  saveSnapshot_(snap);
+  if (updates.length > 0) bumpVersion_();
+  log_('Prices: ' + updates.length + ' holding(s) updated' + (notes.length ? ' (' + notes.join('; ') + ')' : '') + '. Net worth saved for ' + snap.date + '.');
+  return { ok: true, updated: updates.length, notes: notes };
+}
+
+/**
+ * Stock, ETF and SGB prices from GOOGLEFINANCE, through a helper tab (formulas only work in cells).
+ * Symbols are checked by J.priceKey (letters, digits and : & . _ - only), so they cannot break the formula.
+ */
+function googlePrices_(holdings, notes) {
+  var keys = [];
+  holdings.forEach(function (h) {
+    var k = J.priceKey(h);
+    if (k && k.source === 'google' && keys.indexOf(k.key) < 0) keys.push(k.key);
+  });
+  var out = new Map();
+  if (keys.length === 0) return out;
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(PRICES_TAB) || ss.insertSheet(PRICES_TAB);
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, 2).setValues([['Symbol', 'Price']]);
+  sheet.getRange(2, 1, keys.length, 2).setValues(keys.map(function (k) { return [k, '=GOOGLEFINANCE("' + k + '","price")']; }));
+  SpreadsheetApp.flush();
+  var values = sheet.getRange(2, 1, keys.length, 2).getValues();
+  var today = todayIST_();
+  var missing = [];
+  values.forEach(function (row) {
+    var p = row[1];
+    if (typeof p === 'number' && isFinite(p) && p > 0) out.set(String(row[0]), { pricePaise: Math.round(p * 100), date: today });
+    else missing.push(String(row[0]));
+  });
+  if (missing.length) notes.push('no price for ' + missing.join(', '));
+  return out;
+}
+
+/** One row per day: replace today's row if it exists, else add it. */
+function saveSnapshot_(snap) {
+  var tab = readTab_(J.NETWORTH_TAB);
+  var row = J.snapshotToRow(snap);
+  for (var i = 0; i < tab.rows.length; i++) {
+    if (J.rowToSnapshot(tab.rows[i], tab.headers) && J.rowToSnapshot(tab.rows[i], tab.headers).date === snap.date) {
+      writeRows_(tab.sheet, J.NETWORTH_TAB, tab.headers, i + 2, [row]);
+      return;
+    }
+  }
+  appendRows_(J.NETWORTH_TAB, [row]);
 }
 
 function reviewRow_(m, emailId, from, status, reason, stamp, text) {

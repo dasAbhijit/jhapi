@@ -26,6 +26,7 @@ function toSnapshot(r: PullResult): Snapshot {
     review: r.review,
     rules: r.rules ?? [],
     holdings: r.holdings ?? [],
+    netWorth: r.netWorth ?? [],
     problems: r.problems,
   }
 }
@@ -36,6 +37,7 @@ export function StoreProvider({ children, local = new LocalStore(), transport }:
   const [pending, setPending] = useState<Pending>(() => local.pending())
   const [syncing, setSyncing] = useState(false)
   const [readingInbox, setReadingInbox] = useState(false)
+  const [refreshingPrices, setRefreshingPrices] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const inFlight = useRef(false)
@@ -104,6 +106,19 @@ export function StoreProvider({ children, local = new LocalStore(), transport }:
       setError(describe(e))
     } finally {
       setReadingInbox(false)
+    }
+  }, [client, sync, apply])
+
+  const refreshPrices = useCallback(async () => {
+    if (!client) return
+    setRefreshingPrices(true)
+    try {
+      await sync()
+      apply(await client.refreshPrices(), null)
+    } catch (e) {
+      setError(describe(e))
+    } finally {
+      setRefreshingPrices(false)
     }
   }, [client, sync, apply])
 
@@ -204,6 +219,8 @@ export function StoreProvider({ children, local = new LocalStore(), transport }:
   const data = useMemo(() => (snapshot ? withPending(snapshot, pending) : null), [snapshot, pending])
 
   const value: Store = {
+    refreshPrices,
+    refreshingPrices,
     saveRule,
     saveHolding,
     config,

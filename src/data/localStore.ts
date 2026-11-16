@@ -6,6 +6,7 @@
  * Every access is wrapped: Safari private browsing and cleared site data must not crash the app.
  */
 import type { Holding } from '../core/holdings'
+import type { Snapshot as NetWorthPoint } from '../core/networth'
 import type { ReviewItem, Rule, Statement, Txn } from '../core/records'
 import type { SheetConfig } from './sheetClient'
 
@@ -18,6 +19,7 @@ export interface Snapshot {
   review: ReviewItem[]
   rules: Rule[]
   holdings: Holding[]
+  netWorth: NetWorthPoint[]
   problems: string[]
 }
 
@@ -92,7 +94,7 @@ export class LocalStore {
 
   snapshot(): Snapshot | null {
     const s = read<Snapshot>(this.kv, KEYS.snapshot)
-    return s && Array.isArray(s.transactions) ? { ...s, rules: s.rules ?? [], holdings: s.holdings ?? [] } : null
+    return s && Array.isArray(s.transactions) ? { ...s, rules: s.rules ?? [], holdings: s.holdings ?? [], netWorth: s.netWorth ?? [] } : null
   }
   setSnapshot(s: Snapshot | null) {
     if (s) this.kv.set(KEYS.snapshot, JSON.stringify(s))

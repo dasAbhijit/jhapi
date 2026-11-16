@@ -5,6 +5,7 @@ import { formatRupees, formatShort } from '../core/money'
 import { useStore } from '../data/storeContext'
 import { accounts, groupByDate, monthSummary, todayIST, upcomingDues } from '../data/summary'
 import { NotConnected, SyncLine, TxnRow } from '../ui/bits'
+import { NetWorthChart } from '../ui/NetWorthChart'
 import { dayLabel, monthName } from '../ui/format'
 
 export default function Home() {
@@ -42,15 +43,18 @@ export default function Home() {
       )}
 
       <div className="grid">
-        <Link className="card tap-card" to="/portfolio">
-          <div className="kv">
-            <h2>Net worth</h2>
-            <strong className="big">{formatRupees(net)}</strong>
-          </div>
-          <span className="row-sub">
-            Holdings {formatShort(port.assetsPaise)} · bank balances {formatShort(cash)} · loans {formatShort(-port.liabilitiesPaise)}
-          </span>
-        </Link>
+        <section className="card stack">
+          <Link className="tap-card" to="/portfolio">
+            <div className="kv">
+              <h2>Net worth</h2>
+              <strong className="big">{formatRupees(net)}</strong>
+            </div>
+            <span className="row-sub">
+              Holdings {formatShort(port.assetsPaise)} · bank balances {formatShort(cash)} · loans {formatShort(-port.liabilitiesPaise)}
+            </span>
+          </Link>
+          <NetWorthChart snapshots={data?.netWorth ?? []} today={today} />
+        </section>
         {dues.length > 0 && (
           <section className="card">
             <h2>Card bills due</h2>

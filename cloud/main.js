@@ -6,13 +6,15 @@
  *    and adds rows to the Transactions, Statements and Review tabs.
  * 2. As a web app it answers the Jhapi app: `pull` returns every row, `push` merges the app's
  *    changes row by row (the newer edit wins). Every call needs the secret code in Script properties.
- * 3. `onEdit` stamps rows edited by hand with an ID and an Updated time, so edits made in the sheet
+ * 3. Every morning `refreshPrices` updates fund NAVs (AMFI) and stock prices (GOOGLEFINANCE), then saves the
+ *    day's net worth in the Net worth tab.
+ * 4. `onEdit` stamps rows edited by hand with an ID and an Updated time, so edits made in the sheet
  *    flow back to the app.
  *
  * Setup: docs/admin/setup.md in the Jhapi repo. Nothing here is shared with any other app or sheet.
  */
 
-/* oxlint-disable no-unused-vars -- Apps Script calls onOpen, setup, doGet, doPost, onEdit and readInbox by name. */
+/* oxlint-disable no-unused-vars -- Apps Script calls onOpen, setup, doGet, doPost, onEdit, readInbox and refreshPrices by name. */
 
 var J = JhapiCore;
 var TOKEN_PROP = 'JHAPI_TOKEN';
@@ -26,6 +28,8 @@ var MAX_BODY_CHARS = 5 * 1024 * 1024;
 var MAX_RECORDS_PER_PUSH = 5000;
 var MAX_REVIEW_TEXT = 4000;
 var MAX_LOG_ROWS = 500;
+var AMFI_URL = 'https://www.amfiindia.com/spages/NAVAll.txt';
+var PRICES_TAB = 'Prices (auto)';
 var TIDY_DAYS = 45; // how far back transfer pairing and receipt matching look after each email run
 
 var TABS = [
@@ -34,6 +38,7 @@ var TABS = [
   { name: J.REVIEW_TAB, headers: J.REVIEW_HEADERS },
   { name: J.RULES_TAB, headers: J.RULES_HEADERS },
   { name: J.HOLDINGS_TAB, headers: J.HOLDING_HEADERS },
+  { name: J.NETWORTH_TAB, headers: J.NETWORTH_HEADERS },
   { name: J.LOG_TAB, headers: ['Time', 'Event'] },
 ];
 
@@ -44,6 +49,7 @@ function onOpen() {
     .createMenu('Jhapi')
     .addItem('Set up / show secret code', 'setup')
     .addItem('Read bank emails now', 'readInbox')
+    .addItem('Update prices and net worth now', 'refreshPrices')
     .addToUi();
 }
 
@@ -60,7 +66,11 @@ function setup() {
     return t.getHandlerFunction() === 'readInbox';
   });
   if (!hasTrigger) ScriptApp.newTrigger('readInbox').timeBased().everyMinutes(10).create();
-  log_('Set up: tabs ready, bank emails checked every 10 minutes.');
+  var hasPrices = ScriptApp.getProjectTriggers().some(function (t) {
+    return t.getHandlerFunction() === 'refreshPrices';
+  });
+  if (!hasPrices) ScriptApp.newTrigger('refreshPrices').timeBased().everyDays(1).atHour(7).create();
+  log_('Set up: tabs ready, bank emails checked every 10 minutes, prices and net worth every morning.');
   var msg =
     'Secret code for the Jhapi app:\n\n' + token +
     '\n\nNext: Deploy > New deployment > Web app. Execute as: Me. Who has access: Anyone.' +
@@ -117,6 +127,10 @@ function doPost(e) {
     if (body.action === 'push') {
       validatePush_(body);
       return reply_(withLock_(function () { return push_(body); }));
+    }
+    if (body.action === 'refreshPrices') {
+      refreshPrices();
+      return reply_(withLock_(pull_));
     }
     if (body.action === 'readInbox') {
       readInbox();
@@ -325,6 +339,7 @@ function pull_() {
     review: loadReview_().items.map(function (x) { return x.item; }),
     rules: loadRules_(t.problems).items.map(function (x) { return x.rec; }),
     holdings: loadHoldings_(t.problems).items.map(function (x) { return x.rec; }),
+    netWorth: loadSnapshots_(),
     problems: t.problems,
   };
 }
@@ -616,6 +631,114 @@ function tidyRecent_() {
     writeRows_(state.tab.sheet, J.TXN_TAB, state.tab.headers, x.row, [J.txnToRow(x.txn)]);
   });
   return Object.keys(changed).length;
+}
+
+// ---------- prices and net worth ----------
+
+function todayIST_() {
+  return new Date(nowMs_() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+function loadSnapshots_() {
+  var tab = readTab_(J.NETWORTH_TAB);
+  var out = [];
+  tab.rows.forEach(function (row) {
+    var s = J.rowToSnapshot(row, tab.headers);
+    if (s) out.push(s);
+  });
+  return out;
+}
+
+/** Runs every morning: new prices for market holdings, then today's net worth. Never touches email. */
+function refreshPrices() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return { ok: false, error: 'Another run is in progress.' };
+  try {
+    return refreshPricesLocked_();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function refreshPricesLocked_() {
+  ensureTabs_();
+  var state = loadHoldings_();
+  var holdings = state.items.map(function (x) { return x.rec; });
+  var notes = [];
+
+  var amfi = new Map();
+  var wantsAmfi = holdings.some(function (h) { var k = J.priceKey(h); return k && k.source === 'amfi'; });
+  if (wantsAmfi) {
+    try {
+      var res = UrlFetchApp.fetch(AMFI_URL, { muteHttpExceptions: true, followRedirects: true });
+      if (res.getResponseCode() === 200) amfi = J.parseAmfiNav(res.getContentText());
+      else notes.push('AMFI NAVs not fetched (HTTP ' + res.getResponseCode() + ')');
+    } catch (e) {
+      notes.push('AMFI NAVs not fetched (' + String((e && e.message) || e).slice(0, 100) + ')');
+    }
+  }
+  var google = googlePrices_(holdings, notes);
+
+  var updates = J.priceUpdates(holdings, amfi, google);
+  var byId = {};
+  state.items.forEach(function (x) { byId[x.rec.id] = x; });
+  var stamp = nowIso_();
+  updates.forEach(function (u) {
+    var x = byId[u.id];
+    x.rec.pricePaise = u.pricePaise;
+    x.rec.priceDate = u.priceDate;
+    x.rec.updatedAt = stamp;
+    writeRows_(state.tab.sheet, J.HOLDINGS_TAB, state.tab.headers, x.row, [J.holdingToRow(x.rec)]);
+  });
+
+  var snap = J.netWorthSnapshot(holdings, loadTxns_().items.map(function (x) { return x.txn; }), todayIST_());
+  saveSnapshot_(snap);
+  if (updates.length > 0) bumpVersion_();
+  log_('Prices: ' + updates.length + ' holding(s) updated' + (notes.length ? ' (' + notes.join('; ') + ')' : '') + '. Net worth saved for ' + snap.date + '.');
+  return { ok: true, updated: updates.length, notes: notes };
+}
+
+/**
+ * Stock, ETF and SGB prices from GOOGLEFINANCE, through a helper tab (formulas only work in cells).
+ * Symbols are checked by J.priceKey (letters, digits and : & . _ - only), so they cannot break the formula.
+ */
+function googlePrices_(holdings, notes) {
+  var keys = [];
+  holdings.forEach(function (h) {
+    var k = J.priceKey(h);
+    if (k && k.source === 'google' && keys.indexOf(k.key) < 0) keys.push(k.key);
+  });
+  var out = new Map();
+  if (keys.length === 0) return out;
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(PRICES_TAB) || ss.insertSheet(PRICES_TAB);
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, 2).setValues([['Symbol', 'Price']]);
+  sheet.getRange(2, 1, keys.length, 2).setValues(keys.map(function (k) { return [k, '=GOOGLEFINANCE("' + k + '","price")']; }));
+  SpreadsheetApp.flush();
+  var values = sheet.getRange(2, 1, keys.length, 2).getValues();
+  var today = todayIST_();
+  var missing = [];
+  values.forEach(function (row) {
+    var p = row[1];
+    if (typeof p === 'number' && isFinite(p) && p > 0) out.set(String(row[0]), { pricePaise: Math.round(p * 100), date: today });
+    else missing.push(String(row[0]));
+  });
+  if (missing.length) notes.push('no price for ' + missing.join(', '));
+  return out;
+}
+
+/** One row per day: replace today's row if it exists, else add it. */
+function saveSnapshot_(snap) {
+  var tab = readTab_(J.NETWORTH_TAB);
+  var row = J.snapshotToRow(snap);
+  for (var i = 0; i < tab.rows.length; i++) {
+    if (J.rowToSnapshot(tab.rows[i], tab.headers) && J.rowToSnapshot(tab.rows[i], tab.headers).date === snap.date) {
+      writeRows_(tab.sheet, J.NETWORTH_TAB, tab.headers, i + 2, [row]);
+      return;
+    }
+  }
+  appendRows_(J.NETWORTH_TAB, [row]);
 }
 
 function reviewRow_(m, emailId, from, status, reason, stamp, text) {

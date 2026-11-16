@@ -30,11 +30,11 @@ describe('setup', () => {
   it('creates the tabs, a long secret code and one 10-minute trigger', () => {
     const { env, token } = ready()
     expect(token).toMatch(/^[0-9a-f]{64}$/)
-    expect(Object.keys(env.sheets).sort()).toEqual(['Holdings', 'Log', 'Review', 'Rules', 'Statements', 'Transactions'])
+    expect(Object.keys(env.sheets).sort()).toEqual(['Holdings', 'Log', 'Net worth', 'Review', 'Rules', 'Statements', 'Transactions'])
     expect(env.tab(TXN_TAB)[0]).toEqual([...TXN_HEADERS])
     expect(env.sheets[TXN_TAB].frozen).toBe(1)
     env.fn('setup')()
-    expect(env.triggers).toEqual(['readInbox'])
+    expect(env.triggers).toEqual(['readInbox', 'refreshPrices'])
     expect(env.props.JHAPI_TOKEN).toBe(token)
     expect(env.logs.join('\n')).toContain(token) // shown in the execution log when there is no sheet UI
   })
@@ -279,5 +279,50 @@ describe('holdings sync', () => {
     const { env, token } = ready()
     expect(env.call({ token, action: 'push', holdings: [{ ...ppf, type: 'crypto' }] }).error).toBe('Holding 1: bad type.')
     expect(env.call({ token, action: 'push', holdings: [{ ...ppf, ratePct: 'high' }] }).error).toBe('Holding 1: bad ratePct.')
+  })
+})
+
+describe('prices and net worth', () => {
+  const holding = (p: Record<string, unknown>) => ({
+    id: 'h', type: 'mf', name: 'Fund', institution: '', code: '', units: '', pricePaise: null, priceDate: '', investedPaise: null,
+    valuePaise: null, valueDate: '', ratePct: null, startDate: '', maturityDate: '', compounding: '', payout: false, monthlyPaise: null,
+    tenureMonths: null, notes: '', updatedAt: '2026-11-17T09:00:00.000Z', deleted: false, ...p,
+  })
+
+  it('updates fund NAVs from AMFI and stocks from GOOGLEFINANCE, then saves today\'s net worth', () => {
+    const { env, token } = ready()
+    env.call({
+      token, action: 'push', holdings: [
+        holding({ id: 'f', code: '100001', units: '100' }),
+        holding({ id: 's', type: 'stock', name: 'TCS', code: 'tcs', units: '10' }),
+        holding({ id: 'x', type: 'stock', name: 'Gone', code: 'NOPE', units: '1' }),
+        holding({ id: 'p', type: 'property', name: 'Flat', valuePaise: 600000000 }),
+      ],
+    })
+    env.web['https://www.amfiindia.com/spages/NAVAll.txt'] = { code: 200, body: 'Scheme Code;a;b;Name;Net Asset Value;Date\n100001;x;-;Example Fund;87.6543;14-Nov-2026\n' }
+    env.quotes['NSE:TCS'] = 4123.45
+    const r = env.call({ token, action: 'refreshPrices' })
+    expect(r.ok).toBe(true)
+    const byId = Object.fromEntries(r.holdings.map((h: { id: string }) => [h.id, h]))
+    expect(byId.f).toMatchObject({ pricePaise: 8765, priceDate: '2026-11-14' })
+    expect(byId.s).toMatchObject({ pricePaise: 412345, priceDate: '2026-11-17' })
+    expect(byId.x.pricePaise).toBeNull()
+    // Net worth: 100 × 87.65 + 10 × 4,123.45 + 60,00,000
+    expect(r.netWorth).toEqual([expect.objectContaining({ date: '2026-11-17', netPaise: 876500 + 4123450 + 600000000 })])
+    expect(env.tab('Log').some((x) => /Prices: 2 holding\(s\) updated \(no price for NSE:NOPE\)/.test(String(x[1])))).toBe(true)
+
+    // Run again the same day: the net worth row is replaced, not added
+    env.call({ token, action: 'refreshPrices' })
+    expect(env.tab('Net worth')).toHaveLength(2)
+  })
+
+  it('does not fetch AMFI when no fund has a scheme code, and copes with AMFI being down', () => {
+    const { env, token } = ready()
+    env.call({ token, action: 'refreshPrices' })
+    expect(env.fetched).toEqual([])
+    env.call({ token, action: 'push', holdings: [holding({ id: 'f', code: '100001', units: '1' })] })
+    const r = env.call({ token, action: 'refreshPrices' })
+    expect(r.ok).toBe(true)
+    expect(env.tab('Log').some((x) => /AMFI NAVs not fetched \(HTTP 404\)/.test(String(x[1])))).toBe(true)
   })
 })

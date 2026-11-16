@@ -81,7 +81,7 @@ Every requirement starts as **Planned**. The milestone column refers to the buil
 | E3 | EPF shows employee, employer and VPF shares, interest by declared rate per year credited on 31 March, EPS kept out of net worth, and reconciliation with the passbook | M5 | Planned |
 | E4 | PPF, NSC, SCSS, KVP, PO MIS, Sukanya Samriddhi, FD and RD values are calculated from their rates and dates | M1, M5a | Auto (calculations and valuation tests); shown on Portfolio |
 | E5 | Loans show outstanding principal, EMI, rate, EMIs left, interest paid, and handle rate changes and prepayments | M1, M5a | Outstanding and EMIs left shown on Portfolio (Auto). Rate changes and prepayments: calculated (Auto), entry screen planned |
-| E6 | Stocks, ETFs and SGBs are valued from daily prices; mutual funds from daily NAVs | M5b | Units × price built (M5a); automatic prices planned |
+| E6 | Stocks, ETFs and SGBs are valued from daily prices; mutual funds from daily NAVs | M5b | Auto (script on fake AMFI and GOOGLEFINANCE); Open for the first real morning run |
 | E7 | EMI and contribution emails update the matching loan or holding | M5 | Planned |
 | E8 | The owner can import a CAS statement PDF for mutual funds and demat holdings | M8 | Planned |
 
@@ -90,8 +90,8 @@ Every requirement starts as **Planned**. The milestone column refers to the buil
 | ID | Requirement | Milestone | Verified |
 |---|---|---|---|
 | F1 | Net worth is assets minus liabilities, shown by class | M5a | Auto (summary test); Home adds bank balances reported by emails |
-| F2 | The Dashboard shows the change and a chart for 1D, 1W, 1M, 3M, 6M, 1Y, YTD, FY (April to March), 5Y and All | M5 | Planned |
-| F3 | A net worth snapshot is saved once a day the app is opened | M5 | Planned |
+| F2 | Home shows net worth with a chart and the change for 1M, 3M, 6M, 1Y, FY (April to March) and All | M5b | Auto (ranges); Open for a hand check. 1D/1W/YTD/5Y dropped: daily snapshots make 1M the shortest useful range |
+| F3 | A net worth snapshot is saved every morning by the sheet's script, whether or not the app is opened | M5b | Auto (script test, same-day rerun replaces) |
 
 ### G. Goals
 

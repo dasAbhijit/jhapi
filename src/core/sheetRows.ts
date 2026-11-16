@@ -10,6 +10,7 @@ import { formatDate, parseDate } from './dates'
 import { looseDate } from './parsers/text'
 import type { ReviewItem, Rule, Statement, Txn, TxnSource, TxnStatus } from './records'
 import { HOLDING_TYPES, type Holding, type HoldingType } from './holdings'
+import type { Snapshot as NetWorthSnapshot } from './networth'
 
 export type Cell = string | number | boolean | null
 
@@ -234,5 +235,26 @@ export function rowToHolding(row: (Cell | Date)[], headers: string[]): { holding
       updatedAt: str(get('Updated')),
       deleted: bool(get('Deleted')),
     },
+  }
+}
+
+// ---------- Net worth tab (one row per day, written by the script) ----------
+
+export const NETWORTH_TAB = 'Net worth'
+export const NETWORTH_HEADERS = ['Date', 'Net worth', 'Holdings', 'Bank balances', 'Loans', 'Retirement', 'Market', 'Deposits', 'Gold & other'] as const
+TEXT_COLUMNS[NETWORTH_TAB] = ['Date']
+
+export function snapshotToRow(s: NetWorthSnapshot): Cell[] {
+  return [s.date, rupees(s.netPaise), rupees(s.holdingsPaise), rupees(s.bankPaise), rupees(s.liabilitiesPaise),
+    rupees(s.byClass.retirement), rupees(s.byClass.market), rupees(s.byClass.deposits), rupees(s.byClass.gold_other)]
+}
+
+export function rowToSnapshot(row: (Cell | Date)[], headers: string[]): NetWorthSnapshot | null {
+  const get = (h: string) => paiseFrom(row[headers.indexOf(h)] as Cell) ?? 0
+  const date = readDate(row[headers.indexOf('Date')])
+  if (!date) return null
+  return {
+    date, netPaise: get('Net worth'), holdingsPaise: get('Holdings'), bankPaise: get('Bank balances'), liabilitiesPaise: get('Loans'),
+    byClass: { retirement: get('Retirement'), market: get('Market'), deposits: get('Deposits'), gold_other: get('Gold & other') },
   }
 }

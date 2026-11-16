@@ -4,6 +4,7 @@
  * Apps Script cannot answer; fetch then follows Google's redirect to the reply.
  */
 import type { Holding } from '../core/holdings'
+import type { Snapshot as NetWorthPoint } from '../core/networth'
 import type { ReviewItem, Rule, Statement, Txn } from '../core/records'
 
 export interface SheetConfig {
@@ -20,6 +21,7 @@ export interface PullResult {
   review: ReviewItem[]
   rules?: Rule[]
   holdings?: Holding[]
+  netWorth?: NetWorthPoint[]
   problems: string[]
   rejected?: string[]
 }
@@ -103,6 +105,11 @@ export class SheetClient {
 
   push(changes: { transactions?: Txn[]; review?: Pick<ReviewItem, 'id' | 'resolved' | 'updatedAt'>[]; rules?: Rule[]; holdings?: Holding[] }, device: string): Promise<PullResult> {
     return this.call('push', { ...changes, device })
+  }
+
+  /** Asks the script to fetch prices and save today's net worth, then returns everything. */
+  refreshPrices(): Promise<PullResult> {
+    return this.call('refreshPrices', {}, 120_000)
   }
 
   /** Asks the script to read bank emails now, then returns everything. Can take a minute. */
