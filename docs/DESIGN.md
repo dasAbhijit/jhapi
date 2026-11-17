@@ -1,6 +1,6 @@
 # Jhapi: design
 
-A personal finance tracker for Indian money: bank and card transactions read automatically from bank alert emails, plus every kind of asset and loan (EPF, PPF, NPS, mutual funds, stocks, FDs, gold, property, home loan), goals with forecasts, and an AI outlook. Amounts are in rupees (₹). See [Requirements](REQUIREMENTS.md) for what it must do and how each item will be checked.
+A personal finance tracker for Indian money: bank and card transactions read automatically from bank alert emails, plus every kind of asset and loan (EPF, PPF, NPS, mutual funds, stocks, FDs, gold, property, home loan), goals with forecasts, a chat to ask about your money, and an AI outlook. Amounts are in rupees (₹). See [Requirements](REQUIREMENTS.md) for what it must do and how each item will be checked.
 
 **Status:** M0, M1, M4a–d, M5a–b and M6 are built and tested; the app is live at https://dasabhijit.github.io/jhapi/. M5c, M7 and M8 are next. See section 10.
 
@@ -23,7 +23,7 @@ Screen mockups are on the [design canvas](https://claude.ai/artifact/UNS95CTG4Qs
 | Sync | The script is also a **web app**. The app calls it with a secret code: `pull` returns everything, `push` sends changed rows. Merge is **row by row, newer edit wins** (the `Updated` column). Edits typed into the sheet are stamped by an `onEdit` trigger, so they flow back to the app | Two-way: email → sheet → app, app → sheet, and sheet edits → app |
 | When the app syncs | On every open, when it comes back to the foreground after a minute, when it goes back online, after every edit, and on **Sync now**. **Read bank emails now** asks the script to run at once | The owner asked for a fetch on every open |
 | Encryption | **Later.** For now the data is in the owner's private sheet and in the browser's storage on the owner's devices | The owner's call: get the flow working first |
-| AI | Google Gemini with the owner's own API key, for unparsed emails (owner confirms) and the AI Outlook. Later | Same approach as Bhag's invoice scanning |
+| AI | Google Gemini with the owner's own API key, kept only in the browser and called straight from it, for **Ask** (chat about the owner's money), unparsed emails (owner confirms) and the AI Outlook. Planned for M7. See section 8 | The same pattern as the owner's other apps' chat, with a key made only for Jhapi |
 | Currency | INR only, integer paise in the app, rupees in the sheet. Financial year April to March | |
 | Accessibility | Real buttons, links and labels, 44px touch targets, 4.5:1 contrast | |
 
@@ -97,6 +97,7 @@ Jhapi PWA (GitHub Pages) on iPhone / iPad / Mac
 - **The web app** is deployed "execute as me, anyone can call", because the app on GitHub Pages cannot carry a Google login. Every call must include the **secret code**: 64 random hex characters made by **Jhapi > Set up**, kept in Script properties (never in a sheet cell), checked in constant time. Without it the web app answers nothing except "wrong secret code".
 - **The app** accepts only a `https://script.google.com/macros/s/…/exec` address, so the code is never sent anywhere else.
 - **On the device:** the connection (URL and code), the last copy of the sheet and unsent changes are in `localStorage`. **Disconnect this device** removes all of it. Encryption with a passphrase or passkey (the first plan's vault) is a later milestone.
+- **Gemini key** (M7): in `localStorage` on each device only, sent only to `generativelanguage.googleapis.com` in the `x-goog-api-key` header (never in a URL), never in the sheet, a push or a backup. Disconnect and **Remove** clear it. What Gemini is sent is set out in section 8.1.
 - **Never in the repo:** real emails (`samples/` is git-ignored), the secret code, the web app URL.
 - **Pushes are checked first:** a request with any bad record (amount, date, type, timestamps, field lengths) is refused whole, so a bad request changes nothing.
 
@@ -172,7 +173,43 @@ Pure functions with no UI or network code, covered by unit and randomized tests,
 8. **Forecast:** 1,000 runs of monthly returns per asset class (normal distribution from expected return and volatility), run in a Web Worker. Shows the median and the 10th to 90th percentile in today's rupees, and the chance of reaching the target. Fixed-rate assets and loans are calculated, not simulated.
 9. **Transactions:** transfer pairing, duplicate flagging, category rules, monthly spending totals.
 
-## 8. AI Outlook
+## 8. AI with the owner's Gemini key (M7)
+
+Shared by Ask and the Outlook:
+
+- **Key:** the owner's own Gemini API key, entered in Settings on each device, kept in that browser only (section 4). Settings has Save, **Test key** (a cheap authenticated call), Remove, and a link to Google AI Studio. The owner should make a key just for Jhapi, in its own Google Cloud project, so its use can be seen and switched off on its own.
+- **Calls:** straight from the browser to the Gemini REST API (`streamGenerateContent`, streamed), with `credentials: 'omit'`. No server of ours sits in between, and the Apps Script never sees the key.
+- **Model:** a setting, `gemini-flash-latest` by default. If it is busy, slow to start (40 s) or retired, the app tries `gemini-flash-lite-latest`, but only before any reply text has shown.
+- **Free tier:** on Gemini's free tier Google may use what is sent to improve its products, and people may read it. Ask says so before the first question, and says that turning on billing for the key's project stops it.
+
+### 8.1 Ask (chat about your money)
+
+A chat tab, in the style of the owner's other apps' chat: a status line, suggestion chips, a growing text box with Send and Stop, streamed answers, **New chat**, and **Copy**.
+
+**How an answer is made: lookups, not bulk data.** Gemini is never sent the transactions or holdings in bulk. It is given read-only lookup tools; it calls them, the app runs them on the device's copy of the data (`withPending(snapshot)`, so unsent edits count), and only the results go back. A question may take up to 5 lookups; then Gemini writes the answer.
+
+| Lookup | Returns |
+|---|---|
+| `spending_by` (from, to, group by category / payee / month / account, money out or in) | Totals and counts per group, top 20 |
+| `find_transactions` (from, to, text, category, min, max; at most 50) | Date, amount, direction, display name, category, bank name, counted or not |
+| `recurring_payments` | Payees paid on a regular cycle (subscriptions, rent, SIPs) with amount and cycle |
+| `holdings_summary` | Value per class and per holding (name and type), with how the value was found |
+| `loans_summary` | Outstanding, EMI, rate, months left per loan |
+| `goals_summary` | Each goal's status, funded %, SIP needed vs planned, chance |
+| `today` | Today's date, the financial year, when data was last synced and last read from email |
+
+- **Every number comes from a lookup.** The system prompt tells Gemini not to work out totals itself and to say when the data does not cover the question (for example, before the first email was read). Rupee amounts are sent as rupees, not paise.
+- **Display names** are sent, not the bank's raw name, when one is set. Bank names are sent as "Axis Bank", never with the last digits.
+- **Never sent:** account or card numbers, reference numbers, balances (unless the owner asks about a balance; then only that figure), notes, email text, the sheet's secret code or URL.
+- **What Gemini saw:** every answer has a closed-by-default "What Gemini saw (N lookups)" list naming each lookup, its range and how many rows went out. The first time Ask opens, a card explains what is and is not sent; it stays until **Got it**.
+- **Links back into the app:** an answer can carry buttons such as "See 34 October Food transactions", which open Transactions with the search filled in (`/transactions?q=`, as **See all N from …** does).
+- **Suggested changes:** with the Settings switch on (default on), Gemini can suggest a change through two tools, `suggest_category` (payee or picked transactions → category, optionally also as a rule) and `suggest_display_name`. The app shows a card: what changes, how many rows, the total, with **Apply**, **Review in Transactions** (opens Pick mode with those rows picked) and **Dismiss**. Nothing changes until Apply, which goes through `saveTxns` / `setDisplayName` like any edit and syncs. Gemini is told afterwards whether it was applied or dismissed.
+- **Chats** stay in memory on the device until **New chat** or a reload. They are not saved to the sheet. (Keeping recent chats on the device can come later.)
+- **Errors** read plainly: no key (with a link to Settings), key refused, offline, model busy, Stopped.
+- Answers carry a line: model output from the owner's data, not financial advice.
+- **Tests:** each lookup against fixed data; the tool loop with a fake streamer (lookup → result → answer; 5-lookup cap; a tool name not offered is ignored); that a request body never contains an account number, reference or note from the fixture; Apply and Dismiss on a suggested change; the key only in the header.
+
+### 8.2 AI Outlook
 
 - Runs when the app is opened and the last outlook is more than a day old, or on **Refresh now**. A web app cannot wake itself at a set time.
 - Gemini, with Google Search grounding, is asked for recent rate, inflation and market news, and to suggest changes to the owner's **baseline** expected return and volatility for each market asset class.
@@ -202,6 +239,8 @@ Built for **iPhone and iPad in Safari**. Phone layout uses the 390px design widt
 | Goal detail ✅ | Name, cost, year, inflation, SIP, optional return; a share box for each holding; live cost in target year, set aside today, SIP needed, forecast band and chance |
 | EPF, Loan, other holding detail (M5c) | Balance, breakdown, rates by year, events (prepayments, rate changes), the matching actions |
 | CAS import (M5c/M8) | Import a CAS statement into mutual fund and demat holdings |
+| Ask (M7) | Chat about spending, payees, subscriptions, holdings, loans and goals, with a one-time "what Gemini sees" card, chips, streamed answers, "What Gemini saw" under each answer, links into Transactions, and suggested-change cards with Apply |
+| Settings: Gemini (M7) | Key (Save, Test key, Remove), model name, "Let Ask suggest changes", what Gemini sees |
 | AI Outlook and asset detail (M7) | Portfolio and per-class ranges, assumption changes, drivers, track record |
 | Unlock (M8) | Passkey or passphrase when encryption arrives |
 
@@ -221,7 +260,7 @@ Re-planned on 17 Nov 2026 when the owner chose the Google Sheet as the store.
 | M5b ✅ | Prices every morning (AMFI NAVs by scheme code; GOOGLEFINANCE by symbol, through a helper tab), daily net worth snapshots, Home chart with 1M/3M/6M/1Y/FY/All, Update prices now | Script tests on fake Google (AMFI file, GOOGLEFINANCE, AMFI down, same-day rerun) |
 | M5c | EPF/PPF/SSY declared rates by year; loan rate changes and prepayments entered in the app; CAS statement import | Owner's EPF and loan match their statements |
 | M6 ✅ | Goals tab synced both ways; Goals and goal detail screens; holdings set aside by share; SIP needed; 1,000-run forecast band and chance; over-100% warning; goals on Home | Round trip: a goal with a 50% share of a fund lands in the sheet and shows BEHIND with its chance |
-| M7 | AI Outlook and Gemini fallback for unparsed emails | Outlook screens work with a real key |
+| M7 | Gemini key in Settings; **Ask** (chat with lookups, "What Gemini saw", suggested changes); AI Outlook; Gemini fallback for unparsed emails | Tests with a fake Gemini pass (section 8.1); Ask answers "food this month vs last" correctly with a real key on the owner's iPhone |
 | M8 | Encryption on the device (passphrase or passkey), CAS PDF import, CSV export, user guide in `docs/` synced to GitBook | Installed on the owner's phone and in daily use |
 
 ## 11. Risks

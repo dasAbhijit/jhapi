@@ -4,7 +4,7 @@ Personal finance tracker in rupees: bank and card transactions read automaticall
 
 **Live app:** https://dasabhijit.github.io/jhapi/ (bank emails → your own Google Sheet → this app)
 
-**Status:** built and live: email reading and two-way sheet sync (M4), display names and changing many transactions at once (M4d), holdings, prices and net worth (M5a–b), goals with forecasts (M6). Next: EPF/PPF rates by year and loan prepayments (M5c), AI Outlook (M7), encryption and CAS import (M8). See the build plan in [docs/DESIGN.md](docs/DESIGN.md#10-build-plan).
+**Status:** built and live: email reading and two-way sheet sync (M4), display names and changing many transactions at once (M4d), holdings, prices and net worth (M5a–b), goals with forecasts (M6). Next: EPF/PPF rates by year and loan prepayments (M5c), Ask (chat about your money with your own Gemini key) and AI Outlook (M7), encryption and CAS import (M8). See the build plan in [docs/DESIGN.md](docs/DESIGN.md#10-build-plan).
 
 - **Requirements:** [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)
 - **Design and build plan:** [docs/DESIGN.md](docs/DESIGN.md)

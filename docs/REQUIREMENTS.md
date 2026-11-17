@@ -109,7 +109,7 @@ Every requirement starts as **Planned**. The milestone column refers to the buil
 
 | ID | Requirement | Milestone | Verified |
 |---|---|---|---|
-| H1 | The owner can enter a Gemini key, kept only on the device | M7 | Planned |
+| H1 | The owner can enter a Gemini key, kept only on the device (shared with Ask, J1) | M7 | Planned |
 | H2 | The outlook refreshes when the app opens if it is more than a day old, and on Refresh now | M7 | Planned |
 | H3 | Gemini can only adjust expected return and volatility within the allowed limits. The screen shows each change and the news behind it | M7 | Planned |
 | H4 | Only asset classes and rounded totals are sent to Gemini | M7 | Planned |
@@ -128,6 +128,19 @@ Every requirement starts as **Planned**. The milestone column refers to the buil
 | I6 | If Safari has deleted the data on a device, everything comes back from the sheet after reconnecting | M4b | Built (the sheet is the copy to trust) |
 | I3 | The owner can export transactions and holdings as CSV, with formula-looking cells made safe | M8 | Planned |
 | I4 | A user guide lives in `docs/` and syncs to GitBook | M8 | Planned |
+
+### J. Ask (chat)
+
+| ID | Requirement | Milestone | Verified |
+|---|---|---|---|
+| J1 | The owner can enter, test and remove a Gemini key in Settings. It is kept only in that browser and sent only to Gemini, in a header | M7 | Planned |
+| J2 | The owner can ask questions about spending, payees, subscriptions, holdings, loans and goals, and get a streamed answer they can stop | M7 | Planned |
+| J3 | Gemini gets data only through read-only lookups run on the device; every number in an answer comes from a lookup | M7 | Planned |
+| J4 | Account and card numbers, reference numbers, notes, email text and the secret code are never sent to Gemini | M7 | Planned (test on the request body) |
+| J5 | Each answer shows what Gemini saw. Before the first question, a card says what is and is not sent, including the free-tier note | M7 | Planned |
+| J6 | Gemini can suggest a category or display name change; nothing changes until the owner taps Apply, and applied changes sync like any edit | M7 | Planned |
+| J7 | Answers can link into Transactions with the matching rows | M7 | Planned |
+| J8 | Ask says its answers are model output from the owner's data, not financial advice | M7 | Planned |
 
 ## 4. Non-functional requirements
 
