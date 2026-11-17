@@ -1,10 +1,12 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { senderKey, shownName } from '../core/aliases'
 import { accountLabel, type Txn } from '../core/records'
 import { formatINR, parseINR } from '../core/money'
 import { useStore } from '../data/storeContext'
 import { todayIST } from '../data/summary'
 import { NotConnected } from '../ui/bits'
+import { useNames } from '../ui/useNames'
 import { CATEGORIES } from '../ui/format'
 
 function blank(date: string): Txn {
@@ -19,25 +21,35 @@ export default function TxnEdit() {
   const { id } = useParams()
   const [params] = useSearchParams()
   const nav = useNavigate()
-  const { config, data, saveTxn, saveRule, resolveReview } = useStore()
+  const { config, data, saveTxn, saveTxns, saveRule, resolveReview, setDisplayName } = useStore()
+  const names = useNames()
   const existing = id ? data?.transactions.find((t) => t.id === id) : undefined
   const [t, setT] = useState<Txn>(() => existing ?? blank(params.get('date') ?? todayIST()))
   const [amount, setAmount] = useState(() => (existing ? (existing.amountPaise / 100).toFixed(2).replace(/\.00$/, '') : ''))
   const [err, setErr] = useState<string | null>(null)
   const [always, setAlways] = useState(false)
+  const [allFromSender, setAllFromSender] = useState(false)
+  const [showAs, setShowAs] = useState(() => (existing && shownName(existing.counterparty, names).raw ? shownName(existing.counterparty, names).title : ''))
 
   if (!config) return <NotConnected />
   if (id && !existing) return <p className="card muted">This transaction is not in your sheet any more.</p>
 
   const knownAccounts = [...new Set((data?.transactions ?? []).map((x) => x.account).filter(Boolean))].sort()
   const set = (patch: Partial<Txn>) => setT((cur) => ({ ...cur, ...patch }))
+  // Other transactions from the same sender (same bank name, or another bank name with the same display name).
+  const key = existing ? senderKey(existing.counterparty, names) : ''
+  const siblings = key ? (data?.transactions ?? []).filter((x) => !x.deleted && x.id !== t.id && senderKey(x.counterparty, names) === key) : []
+  const senderTitle = existing ? shownName(existing.counterparty, names).title : ''
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
     const paise = parseINR(amount)
     if (!paise) return setErr('Enter an amount, like 450 or 1,250.50.')
     if (!/^\d{4}-\d{2}-\d{2}$/.test(t.date)) return setErr('Pick a date.')
-    saveTxn({ ...t, amountPaise: paise, counterparty: t.counterparty.trim(), note: t.note.trim(), account: t.account.trim() })
+    const edited = { ...t, amountPaise: paise, counterparty: t.counterparty.trim(), note: t.note.trim(), account: t.account.trim() }
+    if (allFromSender) saveTxns([edited, ...siblings.filter((x) => x.category !== t.category).map((x) => ({ ...x, category: t.category }))])
+    else saveTxn(edited)
+    if (edited.counterparty) setDisplayName(edited.counterparty, showAs)
     if (always && t.counterparty.trim()) {
       saveRule({ id: crypto.randomUUID(), contains: t.counterparty.trim(), category: t.category, updatedAt: '', deleted: false }, true)
     }
@@ -60,6 +72,11 @@ export default function TxnEdit() {
         <h1>{existing ? 'Transaction' : 'Add transaction'}</h1>
         <button type="button" className="link-btn" onClick={() => nav(-1)}>Cancel</button>
       </div>
+      {siblings.length > 0 && (
+        <Link className="link-btn" to={`/transactions?q=${encodeURIComponent(senderTitle)}`}>
+          See all {siblings.length + 1} from {senderTitle}
+        </Link>
+      )}
       {fromEmail && (
         <p className="muted">
           Read from a bank email{t.template ? ` (${t.template})` : ''}{t.reference ? ` · Ref ${t.reference}` : ''}
@@ -84,6 +101,12 @@ export default function TxnEdit() {
         <span>Paid to / received from</span>
         <input className="input" value={t.counterparty} onChange={(e) => set({ counterparty: e.target.value })} />
       </label>
+      {t.counterparty.trim() && (
+        <label className="field">
+          <span>Show as (optional, for every transaction with this name)</span>
+          <input className="input" value={showAs} placeholder={t.counterparty.trim()} onChange={(e) => setShowAs(e.target.value)} />
+        </label>
+      )}
       <label className="field">
         <span>Category</span>
         <select className="input" value={t.category} onChange={(e) => set({ category: e.target.value })}>
@@ -92,9 +115,15 @@ export default function TxnEdit() {
           ))}
         </select>
       </label>
+      {siblings.length > 0 && (
+        <label className="check">
+          <input type="checkbox" checked={allFromSender} onChange={(e) => setAllFromSender(e.target.checked)} /> Also use {t.category} for the {siblings.length} other
+          transaction{siblings.length === 1 ? '' : 's'} from {senderTitle}
+        </label>
+      )}
       {t.counterparty.trim() && (
         <label className="check">
-          <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} /> Always use {t.category} for “{t.counterparty.trim()}”
+          <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} /> Always use {t.category} for “{t.counterparty.trim()}”, including future emails
         </label>
       )}
       <label className="field">

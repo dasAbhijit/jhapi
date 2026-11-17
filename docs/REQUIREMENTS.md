@@ -71,6 +71,8 @@ Every requirement starts as **Planned**. The milestone column refers to the buil
 | D5 | Home shows this month's spending and money received, spending by category, card bills due, accounts with the latest known balance, and recent transactions | M4b | Auto (spending total in the round trip); Open for a hand check |
 | D6 | The owner can set their own category rules, applied to new emails, and recategorise past rows from the same payee | M4c | Auto (script applies rules; round trip saves a rule and recategorises) |
 | D7 | A receipt that repeats a bank alert improves the bank's row (payee, category) | M4c | Auto |
+| D8 | The owner can give a payee a display name; the app shows it, with the bank's own name in small type underneath, and the sheet keeps the bank's name | M4d | Auto (unit, script, round trip); Open for a hand check on iPhone and iPad |
+| D9 | The owner can change the category of every transaction from one sender at once, or of any set of picked transactions, and stop or restart counting a picked set | M4d | Auto (round trip: sender-wide and picked set) |
 
 ### E. Portfolio
 

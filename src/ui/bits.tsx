@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { shownName, type AliasMap } from '../core/aliases'
 import { accountLabel, type Txn } from '../core/records'
 import { formatINR, formatRupees } from '../core/money'
 import { useStore } from '../data/storeContext'
@@ -8,18 +9,43 @@ export function Amount({ t, exact = false }: { t: Pick<Txn, 'direction' | 'amoun
   return <span className={t.direction === 'credit' ? 'amt pos' : 'amt'}>{t.direction === 'credit' ? `+${s}` : `−${s}`}</span>
 }
 
-export function TxnRow({ t }: { t: Txn }) {
-  const title = t.counterparty || t.channel.toUpperCase() || 'Transaction'
+/** A payee's display name, with the bank's own name in small type under it when they differ. */
+export function PayeeName({ name, fallback, names }: { name: string; fallback: string; names: AliasMap }) {
+  const shown = shownName(name, names)
   return (
-    <Link to={`/transactions/${encodeURIComponent(t.id)}`} className="row">
+    <>
+      <span className="row-title">{shown.title || fallback}</span>
+      {shown.raw && <span className="row-raw">{shown.raw}</span>}
+    </>
+  )
+}
+
+export function TxnRow({ t, names, selected, onToggle }: { t: Txn; names: AliasMap; selected?: boolean; onToggle?: (id: string) => void }) {
+  const fallback = t.channel.toUpperCase() || 'Transaction'
+  const body = (
+    <>
       <span className="row-main">
-        <span className="row-title">{title}</span>
+        <PayeeName name={t.counterparty} fallback={fallback} names={names} />
         <span className="row-sub">
           {[t.account ? accountLabel(t.account) : '', t.category, t.time.slice(0, 5)].filter(Boolean).join(' · ')}
           {t.status === 'ignored' ? ' · not counted' : ''}
         </span>
       </span>
       <Amount t={t} />
+    </>
+  )
+  if (onToggle) {
+    const label = `${shownName(t.counterparty, names).title || fallback}, ${formatRupees(t.amountPaise)}, ${t.date}`
+    return (
+      <label className={selected ? 'row pick on' : 'row pick'}>
+        <input type="checkbox" checked={!!selected} onChange={() => onToggle(t.id)} aria-label={label} />
+        {body}
+      </label>
+    )
+  }
+  return (
+    <Link to={`/transactions/${encodeURIComponent(t.id)}`} className="row">
+      {body}
     </Link>
   )
 }

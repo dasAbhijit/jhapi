@@ -6,11 +6,13 @@ import { formatRupees, formatShort } from '../core/money'
 import { useStore } from '../data/storeContext'
 import { accounts, groupByDate, monthSummary, todayIST, upcomingDues } from '../data/summary'
 import { NotConnected, SyncLine, TxnRow } from '../ui/bits'
+import { useNames } from '../ui/useNames'
 import { NetWorthChart } from '../ui/NetWorthChart'
 import { dayLabel, monthName } from '../ui/format'
 
 export default function Home() {
   const { config, data } = useStore()
+  const names = useNames()
   if (!config) return <NotConnected />
   const today = todayIST()
   const month = today.slice(0, 7)
@@ -129,7 +131,7 @@ export default function Home() {
             <h2>Recent</h2>
             <Link to="/transactions">See all</Link>
           </div>
-          {recent.length === 0 ? <p className="muted pad">Nothing yet.</p> : recent.map((t) => <TxnRow key={t.id} t={t} />)}
+          {recent.length === 0 ? <p className="muted pad">Nothing yet.</p> : recent.map((t) => <TxnRow key={t.id} t={t} names={names} />)}
         </section>
       </div>
     </div>

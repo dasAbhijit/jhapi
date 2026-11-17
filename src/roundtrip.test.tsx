@@ -9,7 +9,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { makeEnv, passAuth } from './cloud/fakeGoogle'
-import { RULES_TAB, TXN_HEADERS, TXN_TAB } from './core/sheetRows'
+import { NAMES_TAB, RULES_TAB, TXN_HEADERS, TXN_TAB } from './core/sheetRows'
 import { LocalStore, memoryKV } from './data/localStore'
 import type { Transport } from './data/sheetClient'
 import { StoreProvider } from './data/store'
@@ -203,5 +203,46 @@ describe('app and sheet round trip', () => {
       expect(row?.slice(1, 4)).toEqual(['College', 2500000, 2036])
       expect(row?.[7]).toBe('h1:50')
     })
+  })
+  it('a display name shows over the bank\'s name, and categories change for a whole sender or a picked set', async () => {
+    const user = userEvent.setup()
+    const { env, token } = setup()
+    // A second payment to the same payee, typed into the sheet by hand.
+    const row = Array(TXN_HEADERS.length).fill('')
+    row[TXN_HEADERS.indexOf('Date')] = '2026-11-10'
+    row[TXN_HEADERS.indexOf('Amount')] = 220
+    row[TXN_HEADERS.indexOf('Type')] = 'Debit'
+    row[TXN_HEADERS.indexOf('Counterparty')] = 'swiggy '
+    env.sheets[TXN_TAB].grid.push(row)
+    await user.type(screen.getByLabelText('Web app URL'), URL)
+    await user.type(screen.getByLabelText('Secret code'), token)
+    await user.click(screen.getByRole('button', { name: 'Connect' }))
+    await screen.findByText('Transactions in the sheet')
+
+    await user.click(screen.getByRole('link', { name: 'Transactions' }))
+    await user.click(await screen.findByText('SWIGGY'))
+    await user.type(screen.getByLabelText(/Show as/), 'Swiggy')
+    await user.selectOptions(screen.getByLabelText('Category'), 'Entertainment')
+    await user.click(screen.getByLabelText(/Also use Entertainment for the 1 other transaction from SWIGGY/))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    const cat = (r: unknown[]) => r[TXN_HEADERS.indexOf('Category')]
+    await waitFor(() => {
+      expect(env.tab(NAMES_TAB).slice(1).map((r) => r.slice(1, 3))).toEqual([['SWIGGY', 'Swiggy']])
+      expect(env.tab(TXN_TAB).slice(1).map(cat)).toEqual(['Entertainment', 'Entertainment'])
+    })
+    // Both rows (bank spellings "SWIGGY" and "swiggy ") show the display name.
+    expect(await screen.findAllByText('Swiggy')).toHaveLength(2)
+    expect(screen.queryByText('SWIGGY')).toBeNull()
+
+    // Search by the display name, pick everything shown, and change it in one go.
+    vi.setSystemTime(new Date('2026-11-17T12:01:00Z')) // a later edit than the one above
+    await user.type(screen.getByLabelText('Search'), 'swig')
+    await user.click(screen.getByRole('button', { name: 'Pick' }))
+    await user.click(screen.getByRole('button', { name: 'Pick all 2 shown' }))
+    await user.selectOptions(screen.getByLabelText('Category for picked'), 'Bills')
+    await user.click(screen.getByRole('button', { name: 'Set category' }))
+    expect(await screen.findByText('2 transactions now in Bills.')).toBeInTheDocument()
+    await waitFor(() => expect(env.tab(TXN_TAB).slice(1).map(cat)).toEqual(['Bills', 'Bills']))
   })
 })

@@ -12,6 +12,7 @@ import type { ReviewItem, Rule, Statement, Txn, TxnSource, TxnStatus } from './r
 import { HOLDING_TYPES, type Holding, type HoldingType } from './holdings'
 import type { Snapshot as NetWorthSnapshot } from './networth'
 import { readTags, writeTags, type Goal } from './goalPlan'
+import type { Alias } from './aliases'
 
 export type Cell = string | number | boolean | null
 
@@ -292,4 +293,22 @@ export function rowToGoal(row: (Cell | Date)[], headers: string[]): { goal: Goal
       deleted: bool(get('Deleted')),
     },
   }
+}
+
+// ---------- Names tab (display names for payees) ----------
+
+export const NAMES_TAB = 'Names'
+export const NAME_HEADERS = ['ID', 'Name in email', 'Show as', 'Updated', 'Deleted'] as const
+TEXT_COLUMNS[NAMES_TAB] = ['ID', 'Name in email', 'Show as', 'Updated']
+
+export function aliasToRow(a: Alias): Cell[] {
+  return [a.id, a.name, a.showAs, a.updatedAt, a.deleted ? 'TRUE' : '']
+}
+
+export function rowToAlias(row: Cell[], headers: string[]): Alias | null {
+  const get = (h: string) => row[headers.indexOf(h)] as Cell
+  const name = str(get('Name in email'))
+  const showAs = str(get('Show as'))
+  if (!name || !showAs) return null
+  return { id: str(get('ID')), name, showAs, updatedAt: str(get('Updated')), deleted: bool(get('Deleted')) }
 }

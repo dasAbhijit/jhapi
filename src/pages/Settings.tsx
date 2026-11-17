@@ -4,8 +4,9 @@ import { useStore } from '../data/storeContext'
 const GUIDE = 'https://github.com/dasAbhijit/jhapi/blob/main/docs/admin/setup.md'
 
 export default function Settings() {
-  const { config, connect, disconnect, data, sync, syncing, readInbox, readingInbox, error, saveRule } = useStore()
+  const { config, connect, disconnect, data, sync, syncing, readInbox, readingInbox, error, saveRule, setDisplayName } = useStore()
   const rules = (data?.rules ?? []).filter((r) => !r.deleted)
+  const names = (data?.names ?? []).filter((a) => !a.deleted).sort((a, b) => a.showAs.localeCompare(b.showAs))
   const [url, setUrl] = useState('')
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
@@ -94,6 +95,27 @@ export default function Settings() {
                 <li key={r.id} className="kv">
                   <span>“{r.contains}” → <strong>{r.category}</strong></span>
                   <button type="button" className="link-btn" aria-label={`Remove rule for ${r.contains}`} onClick={() => saveRule({ ...r, deleted: true })}>Remove</button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+      {config && (
+        <section className="card stack">
+          <h2>Display names</h2>
+          <p className="muted">Names you chose in place of the bank's. Set one from any transaction (“Show as”), or in the sheet's Names tab.</p>
+          {names.length === 0 ? (
+            <p className="muted">No display names yet.</p>
+          ) : (
+            <ul className="plain">
+              {names.map((a) => (
+                <li key={a.id} className="kv">
+                  <span className="row-main">
+                    <strong>{a.showAs}</strong>
+                    <span className="row-raw">{a.name}</span>
+                  </span>
+                  <button type="button" className="link-btn" aria-label={`Remove display name for ${a.name}`} onClick={() => setDisplayName(a.name, '')}>Remove</button>
                 </li>
               ))}
             </ul>

@@ -20,6 +20,10 @@ export interface Store {
   refreshPrices(): Promise<void>
   refreshingPrices: boolean
   saveTxn(t: Txn): void
+  /** Save several transactions in one go (bulk edits). */
+  saveTxns(ts: Txn[]): void
+  /** Show the bank's name `counterparty` as `showAs`; empty `showAs` removes the display name. */
+  setDisplayName(counterparty: string, showAs: string): void
   saveHolding(h: Holding): void
   saveGoal(g: Goal): void
   /** Save a category rule; with `apply`, also recategorise other transactions from the same payee. */

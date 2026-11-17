@@ -125,6 +125,8 @@ Amounts are **rupees** in the sheet and integer **paise** in the app. Dates are 
 
 **Rules:** `ID`, `Contains`, `Category`, `Updated`, `Deleted`. Synced both ways like transactions; rows typed by hand get an ID.
 
+**Names:** `ID`, `Name in email`, `Show as`, `Updated`, `Deleted`. Display names: the app shows `Show as` in place of the bank's name, with the bank's name in small type underneath. Matching ignores case and extra spaces. The Transactions tab keeps the bank's name; several bank names may share one display name and then count as one sender. Synced both ways like Rules.
+
 **Log:** `Time`, `Event` (the last 500 lines).
 
 **Holdings:** `ID`, `Name`, `Type`, `Institution`, `Code`, `Units`, `Price`, `Price date`, `Invested`, `Value`, `Value date`, `Rate %`, `Start`, `Maturity`, `Compounding`, `Payout`, `Monthly`, `Months`, `Notes`, `Updated`, `Deleted`.
@@ -215,6 +217,7 @@ Re-planned on 17 Nov 2026 when the owner chose the Google Sheet as the store.
 | M4a ✅ | Parsers for Axis, ICICI, SBI, DBS, PhonePe and Amazon Pay; allow-list; synthetic tests and local real-sample tests | All 57 real samples give the expected result |
 | M4b ✅ | Jhapi's own Apps Script (email reader with DKIM check, web app, onEdit), sheet layout, app sync (pull on open, push on edit, offline queue), Home, Transactions, Needs review, Add/edit, Settings | Script tests on fake Google pass, the app ↔ script round-trip test passes, deployed |
 | M4c | ✅ Owner's category rules (Rules tab, "Always use…"), transfer pairing between own accounts, receipts improving bank rows. Still to do: live on the owner's sheet, a week of real mail | A week of real mail reads with nothing missed |
+| M4d ✅ | Display names (Names tab, "Show as" on a transaction, list in Settings); "Also use … for the N other transactions from …" on a transaction; Pick mode on Transactions to change the category of, or stop counting, many at once | Round trip: an alias lands in the Names tab and shows on both rows; a sender-wide change and a picked set change both rows in the sheet |
 | M5a ✅ | Holdings tab synced both ways; Portfolio and add/edit screens; values from the M1 calculators; net worth on Home (holdings + bank balances from emails − loans) | Round trip: a PPF added in the app shows the right value and lands in the sheet |
 | M5b ✅ | Prices every morning (AMFI NAVs by scheme code; GOOGLEFINANCE by symbol, through a helper tab), daily net worth snapshots, Home chart with 1M/3M/6M/1Y/FY/All, Update prices now | Script tests on fake Google (AMFI file, GOOGLEFINANCE, AMFI down, same-day rerun) |
 | M5c | EPF/PPF/SSY declared rates by year; loan rate changes and prepayments entered in the app; CAS statement import | Owner's EPF and loan match their statements |

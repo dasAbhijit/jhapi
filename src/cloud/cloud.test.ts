@@ -30,7 +30,7 @@ describe('setup', () => {
   it('creates the tabs, a long secret code and one 10-minute trigger', () => {
     const { env, token } = ready()
     expect(token).toMatch(/^[0-9a-f]{64}$/)
-    expect(Object.keys(env.sheets).sort()).toEqual(['Goals', 'Holdings', 'Log', 'Net worth', 'Review', 'Rules', 'Statements', 'Transactions'])
+    expect(Object.keys(env.sheets).sort()).toEqual(['Goals', 'Holdings', 'Log', 'Names', 'Net worth', 'Review', 'Rules', 'Statements', 'Transactions'])
     expect(env.tab(TXN_TAB)[0]).toEqual([...TXN_HEADERS])
     expect(env.sheets[TXN_TAB].frozen).toBe(1)
     env.fn('setup')()
@@ -232,6 +232,17 @@ describe('rules and tidying after an email run', () => {
     const r = env.call({ token, action: 'push', rules: [{ id: 'r2', contains: 'BESCOM', category: 'Bills', updatedAt: '2026-11-17T10:00:00.000Z', deleted: false }] })
     expect(r.rules.map((x: { contains: string }) => x.contains).sort()).toEqual(['BESCOM', 'swiggy'])
     expect(env.call({ token, action: 'push', rules: [{ id: 'r3', contains: '', category: 'X', updatedAt: '2026-11-17T10:00:00.000Z', deleted: false }] }).error).toMatch(/Rule 1/)
+  })
+
+  it('display names sync both ways and bad ones are refused', () => {
+    const { env, token } = ready()
+    env.sheets.Names.grid.push(['', 'BUNDL TECHNOLOGIES', 'Swiggy', '', ''])
+    const pulled = env.call({ token, action: 'pull' })
+    expect(pulled.names).toEqual([expect.objectContaining({ name: 'BUNDL TECHNOLOGIES', showAs: 'Swiggy', deleted: false })])
+    expect(pulled.names[0].id).toBeTruthy()
+    const r = env.call({ token, action: 'push', names: [{ id: 'n2', name: ' Asha K ', showAs: 'Maid', updatedAt: '2026-11-17T10:00:00.000Z', deleted: false }] })
+    expect(r.names.map((x: { name: string }) => x.name).sort()).toEqual(['Asha K', 'BUNDL TECHNOLOGIES'])
+    expect(env.call({ token, action: 'push', names: [{ id: 'n3', name: 'X', showAs: '', updatedAt: '2026-11-17T10:00:00.000Z', deleted: false }] }).error).toMatch(/Name 1/)
   })
 
   it('tags a transfer between two of the owner\'s accounts after the run', () => {

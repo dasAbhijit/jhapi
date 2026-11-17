@@ -30,6 +30,8 @@ var JhapiCore = (() => {
     HOLDING_HEADERS: () => HOLDING_HEADERS,
     HOLDING_TYPES: () => HOLDING_TYPES,
     LOG_TAB: () => LOG_TAB,
+    NAMES_TAB: () => NAMES_TAB,
+    NAME_HEADERS: () => NAME_HEADERS,
     NETWORTH_HEADERS: () => NETWORTH_HEADERS,
     NETWORTH_TAB: () => NETWORTH_TAB,
     REVIEW_HEADERS: () => REVIEW_HEADERS,
@@ -43,6 +45,7 @@ var JhapiCore = (() => {
     TXN_HEADERS: () => TXN_HEADERS,
     TXN_TAB: () => TXN_TAB,
     accountLabel: () => accountLabel,
+    aliasToRow: () => aliasToRow,
     checkSender: () => checkSender,
     enrichFromReceipts: () => enrichFromReceipts,
     findSender: () => findSender,
@@ -57,6 +60,7 @@ var JhapiCore = (() => {
     priceKey: () => priceKey,
     priceUpdates: () => priceUpdates,
     reviewToRow: () => reviewToRow,
+    rowToAlias: () => rowToAlias,
     rowToGoal: () => rowToGoal,
     rowToHolding: () => rowToHolding,
     rowToReview: () => rowToReview,
@@ -1595,6 +1599,19 @@ var JhapiCore = (() => {
       }
     };
   }
+  var NAMES_TAB = "Names";
+  var NAME_HEADERS = ["ID", "Name in email", "Show as", "Updated", "Deleted"];
+  TEXT_COLUMNS[NAMES_TAB] = ["ID", "Name in email", "Show as", "Updated"];
+  function aliasToRow(a) {
+    return [a.id, a.name, a.showAs, a.updatedAt, a.deleted ? "TRUE" : ""];
+  }
+  function rowToAlias(row, headers) {
+    const get = (h) => row[headers.indexOf(h)];
+    const name = str(get("Name in email"));
+    const showAs = str(get("Show as"));
+    if (!name || !showAs) return null;
+    return { id: str(get("ID")), name, showAs, updatedAt: str(get("Updated")), deleted: bool(get("Deleted")) };
+  }
 
   // src/core/prices.ts
   function parseAmfiNav(text) {
@@ -1704,6 +1721,7 @@ var TABS = [
   { name: J.STATEMENT_TAB, headers: J.STATEMENT_HEADERS },
   { name: J.REVIEW_TAB, headers: J.REVIEW_HEADERS },
   { name: J.RULES_TAB, headers: J.RULES_HEADERS },
+  { name: J.NAMES_TAB, headers: J.NAME_HEADERS },
   { name: J.HOLDINGS_TAB, headers: J.HOLDING_HEADERS },
   { name: J.NETWORTH_TAB, headers: J.NETWORTH_HEADERS },
   { name: J.GOALS_TAB, headers: J.GOAL_HEADERS },
@@ -1933,7 +1951,7 @@ function loadStatements_() {
 }
 
 /**
- * A table synced row by row (Rules, Holdings): rows typed by hand get an ID and an Updated time and
+ * A table synced row by row (Rules, Names, Holdings, Goals): rows typed by hand get an ID and an Updated time and
  * are rewritten in the standard layout. `fromRow` returns a record, or {problem} for a row it cannot read.
  */
 function loadTable_(tabName, fromRow, toRow, problems) {
@@ -1977,6 +1995,14 @@ function loadRules_(problems) {
   return loadTable_(J.RULES_TAB, ruleFromRow_, J.ruleToRow, problems);
 }
 
+function aliasFromRow_(row, headers) {
+  return J.rowToAlias(row, headers);
+}
+
+function loadNames_(problems) {
+  return loadTable_(J.NAMES_TAB, aliasFromRow_, J.aliasToRow, problems);
+}
+
 function loadHoldings_(problems) {
   return loadTable_(J.HOLDINGS_TAB, holdingFromRow_, J.holdingToRow, problems);
 }
@@ -2015,6 +2041,7 @@ function pull_() {
     statements: loadStatements_(),
     review: loadReview_().items.map(function (x) { return x.item; }),
     rules: loadRules_(t.problems).items.map(function (x) { return x.rec; }),
+    names: loadNames_(t.problems).items.map(function (x) { return x.rec; }),
     holdings: loadHoldings_(t.problems).items.map(function (x) { return x.rec; }),
     netWorth: loadSnapshots_(),
     goals: loadGoals_(t.problems).items.map(function (x) { return x.rec; }),
@@ -2034,8 +2061,16 @@ function validatePush_(body) {
   var rules = body.rules || [];
   var holdings = body.holdings || [];
   var goals = body.goals || [];
-  if (!Array.isArray(txns) || !Array.isArray(review) || !Array.isArray(rules) || !Array.isArray(holdings) || !Array.isArray(goals)) throw new Error('Bad request.');
-  if (txns.length + review.length + rules.length + holdings.length + goals.length > MAX_RECORDS_PER_PUSH) throw new Error('Too many changes in one request.');
+  var names = body.names || [];
+  if (!Array.isArray(txns) || !Array.isArray(review) || !Array.isArray(rules) || !Array.isArray(holdings) || !Array.isArray(goals) || !Array.isArray(names)) throw new Error('Bad request.');
+  if (txns.length + review.length + rules.length + holdings.length + goals.length + names.length > MAX_RECORDS_PER_PUSH) throw new Error('Too many changes in one request.');
+  names.forEach(function (a, i) {
+    var ok = a && typeof a.id === 'string' && a.id && a.id.length <= 100 &&
+      typeof a.name === 'string' && a.name.trim() && a.name.length <= 300 &&
+      typeof a.showAs === 'string' && a.showAs.trim() && a.showAs.length <= 100 &&
+      typeof a.deleted === 'boolean' && ISO_TIME.test(String(a.updatedAt));
+    if (!ok) throw new Error('Name ' + (i + 1) + ': bad record.');
+  });
   goals.forEach(function (g, i) {
     var where = 'Goal ' + (i + 1) + ': ';
     if (!g || typeof g.id !== 'string' || !g.id || g.id.length > 100) throw new Error(where + 'bad id.');
@@ -2137,6 +2172,10 @@ function push_(body) {
     return { id: r.id, contains: r.contains.trim(), category: r.category.trim(), updatedAt: r.updatedAt, deleted: r.deleted };
   });
   changed += mergeTable_(J.RULES_TAB, loadRules_(), cleanRules, J.ruleToRow, rejected);
+  var cleanNames = (body.names || []).map(function (a) {
+    return { id: a.id, name: a.name.trim(), showAs: a.showAs.trim(), updatedAt: a.updatedAt, deleted: a.deleted };
+  });
+  changed += mergeTable_(J.NAMES_TAB, loadNames_(), cleanNames, J.aliasToRow, rejected);
   var cleanHoldings = (body.holdings || []).map(function (h) {
     var out = {};
     ['id', 'type', 'name', 'institution', 'code', 'units', 'pricePaise', 'priceDate', 'investedPaise', 'valuePaise', 'valueDate', 'ratePct',
@@ -2168,7 +2207,7 @@ function onEdit(e) {
   if (!e || !e.range) return;
   var sheet = e.range.getSheet();
   var name = sheet.getName();
-  if ([J.TXN_TAB, J.REVIEW_TAB, J.STATEMENT_TAB, J.RULES_TAB, J.HOLDINGS_TAB, J.GOALS_TAB].indexOf(name) < 0) return;
+  if ([J.TXN_TAB, J.REVIEW_TAB, J.STATEMENT_TAB, J.RULES_TAB, J.NAMES_TAB, J.HOLDINGS_TAB, J.GOALS_TAB].indexOf(name) < 0) return;
   var first = Math.max(2, e.range.getRow());
   var last = e.range.getRow() + e.range.getNumRows() - 1;
   if (last < first) return;

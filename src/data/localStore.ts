@@ -8,6 +8,7 @@
 import type { Holding } from '../core/holdings'
 import type { Snapshot as NetWorthPoint } from '../core/networth'
 import type { Goal } from '../core/goalPlan'
+import type { Alias } from '../core/aliases'
 import type { ReviewItem, Rule, Statement, Txn } from '../core/records'
 import type { SheetConfig } from './sheetClient'
 
@@ -19,6 +20,7 @@ export interface Snapshot {
   statements: Statement[]
   review: ReviewItem[]
   rules: Rule[]
+  names: Alias[]
   holdings: Holding[]
   netWorth: NetWorthPoint[]
   goals: Goal[]
@@ -29,6 +31,7 @@ export interface Pending {
   transactions: Txn[]
   review: Pick<ReviewItem, 'id' | 'resolved' | 'updatedAt'>[]
   rules: Rule[]
+  names: Alias[]
   holdings: Holding[]
   goals: Goal[]
 }
@@ -97,7 +100,7 @@ export class LocalStore {
 
   snapshot(): Snapshot | null {
     const s = read<Snapshot>(this.kv, KEYS.snapshot)
-    return s && Array.isArray(s.transactions) ? { ...s, rules: s.rules ?? [], holdings: s.holdings ?? [], netWorth: s.netWorth ?? [], goals: s.goals ?? [] } : null
+    return s && Array.isArray(s.transactions) ? { ...s, rules: s.rules ?? [], names: s.names ?? [], holdings: s.holdings ?? [], netWorth: s.netWorth ?? [], goals: s.goals ?? [] } : null
   }
   setSnapshot(s: Snapshot | null) {
     if (s) this.kv.set(KEYS.snapshot, JSON.stringify(s))
@@ -106,10 +109,10 @@ export class LocalStore {
 
   pending(): Pending {
     const p = read<Pending>(this.kv, KEYS.pending)
-    return { transactions: p?.transactions ?? [], review: p?.review ?? [], rules: p?.rules ?? [], holdings: p?.holdings ?? [], goals: p?.goals ?? [] }
+    return { transactions: p?.transactions ?? [], review: p?.review ?? [], rules: p?.rules ?? [], names: p?.names ?? [], holdings: p?.holdings ?? [], goals: p?.goals ?? [] }
   }
   setPending(p: Pending) {
-    if (p.transactions.length === 0 && p.review.length === 0 && p.rules.length === 0 && p.holdings.length === 0 && p.goals.length === 0) this.kv.remove(KEYS.pending)
+    if (p.transactions.length === 0 && p.review.length === 0 && p.rules.length === 0 && p.names.length === 0 && p.holdings.length === 0 && p.goals.length === 0) this.kv.remove(KEYS.pending)
     else this.kv.set(KEYS.pending, JSON.stringify(p))
   }
 
@@ -141,6 +144,10 @@ export function queueRule(p: Pending, r: Rule): Pending {
   return { ...p, rules: [...p.rules.filter((x) => x.id !== r.id), r] }
 }
 
+export function queueName(p: Pending, a: Alias): Pending {
+  return { ...p, names: [...p.names.filter((x) => x.id !== a.id), a] }
+}
+
 export function queueReview(p: Pending, r: Pick<ReviewItem, 'id' | 'resolved' | 'updatedAt'>): Pending {
   return { ...p, review: [...p.review.filter((x) => x.id !== r.id), r] }
 }
@@ -150,6 +157,7 @@ export function withPending(s: Snapshot, p: Pending): Snapshot {
   const ids = new Set(p.transactions.map((t) => t.id))
   const resolved = new Map(p.review.map((r) => [r.id, r.resolved]))
   const ruleIds = new Set(p.rules.map((r) => r.id))
+  const nameIds = new Set(p.names.map((a) => a.id))
   const holdingIds = new Set(p.holdings.map((h) => h.id))
   const goalIds = new Set(p.goals.map((g) => g.id))
   return {
@@ -157,6 +165,7 @@ export function withPending(s: Snapshot, p: Pending): Snapshot {
     goals: [...s.goals.filter((g) => !goalIds.has(g.id)), ...p.goals],
     holdings: [...s.holdings.filter((h) => !holdingIds.has(h.id)), ...p.holdings],
     rules: [...s.rules.filter((r) => !ruleIds.has(r.id)), ...p.rules],
+    names: [...s.names.filter((a) => !nameIds.has(a.id)), ...p.names],
     transactions: [...s.transactions.filter((t) => !ids.has(t.id)), ...p.transactions],
     review: s.review.map((r) => (resolved.has(r.id) ? { ...r, resolved: resolved.get(r.id)! } : r)),
   }
