@@ -4,7 +4,7 @@ What the app must do, and how each item will be checked. For how it is built, se
 
 ## 1. Purpose and user
 
-One person (the owner) tracks their whole financial picture in rupees: day-to-day spending read automatically from bank alert emails, every asset and loan, net worth over time, goals, and a forecast. The owner uses it mostly on a phone, sometimes on a Mac.
+One person (the owner) tracks their whole financial picture in rupees: day-to-day spending read automatically from bank alert emails, every asset and loan, net worth over time, goals, and a forecast. The owner uses it mostly on an iPhone and an iPad, in Safari, sometimes on a Mac.
 
 There is one user and one role. There is no sharing.
 
@@ -65,7 +65,7 @@ Every requirement starts as **Planned**. The milestone column refers to the buil
 | ID | Requirement | Milestone | Verified |
 |---|---|---|---|
 | D1 | The owner sees all transactions newest first, grouped by day, with search, and a Needs review list with a count | M4b | Auto (round trip); Open for a hand check on iPhone and iPad |
-| D2 | The owner can add, edit, recategorise, mark as not counted, or delete a transaction | M4b | Auto (add); Open for edit and delete by hand |
+| D2 | The owner can add, edit, recategorise, mark as not counted, or delete a transaction | M4b | Auto (add, recategorise); Open for delete by hand |
 | D3 | Receipts (PhonePe, YONO and similar copies) are kept but never counted, and hidden unless asked for | M4b | Auto |
 | D4 | Card bill payments and transfers between own accounts are left out of spending | M4c | Auto (pairing by UPI handle, same person, card bill; no false pairs for strangers, other amounts, far dates) |
 | D5 | Home shows this month's spending and money received, spending by category, card bills due, accounts with the latest known balance, and recent transactions | M4b | Auto (spending total in the round trip); Open for a hand check |

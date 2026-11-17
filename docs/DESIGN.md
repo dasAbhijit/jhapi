@@ -2,11 +2,11 @@
 
 A personal finance tracker for Indian money: bank and card transactions read automatically from bank alert emails, plus every kind of asset and loan (EPF, PPF, NPS, mutual funds, stocks, FDs, gold, property, home loan), goals with forecasts, and an AI outlook. Amounts are in rupees (₹). See [Requirements](REQUIREMENTS.md) for what it must do and how each item will be checked.
 
-**Status:** M0, M1 and the email-to-sheet pipeline (M4) are built and tested; the app is live at https://dasabhijit.github.io/jhapi/. See section 10.
+**Status:** M0, M1, M4a–d, M5a–b and M6 are built and tested; the app is live at https://dasabhijit.github.io/jhapi/. M5c, M7 and M8 are next. See section 10.
 
 Jhapi (ঝাঁপি) is short for *Lokkhir Jhapi*, the small pot of savings kept in many Bengali homes.
 
-Screen mockups are on the [design canvas](https://claude.ai/artifact/UNS95CTG4QsjUPiycrECjM) (private to the owner).
+Screen mockups are on the [design canvas](https://claude.ai/artifact/UNS95CTG4QsjUPiycrECjM) (private to the owner). Its top rows are the first concepts (some, like Drive backup and devices, belong to the earlier encrypted-vault plan); the **As built** row shows the screens as they are in the live app.
 
 ## 1. Decisions
 
@@ -88,6 +88,8 @@ Jhapi PWA (GitHub Pages) on iPhone / iPad / Mac
 
   Both get the category **Transfer** and a note ("To Axis Bank ••1111"). Each row pairs at most once. Card payments, iMobile card payments and transfers the bank labels as such are Transfer from the start. Transfer, Investments and Refund are left out of the month's spending.
 - **Categories:** the owner's own **rules** come first (the `Rules` tab: "payee contains X → category"). The app's "Always use <category> for <payee>" adds one and recategorises earlier rows from that payee. Then seed rules in `src/core/records.ts` (Swiggy → Food, BESCOM → Bills, and so on). Any category can be changed in the app or the sheet.
+- **Changing many at once:** on a transaction, "Also use <category> for the N other transactions from <sender>" changes every row from that sender once, without a rule. On Transactions, **Pick** mode (with **Pick all shown** after a search) sets the category of, stops counting, or counts again a picked set. Each is one push, so a long list costs one round trip.
+- **Display names** (`src/core/aliases.ts`, the `Names` tab): the app shows the owner's name for a payee ("Swiggy") with the bank's spelling in small type underneath ("BUNDL TECHNOLOGIES PRIVATE LIMITED"). Only the display changes; the `Counterparty` column, rules, transfer pairing and duplicate checks keep using the bank's name. Matching ignores case and extra spaces; tidying only the capitals ("SWIGGY" → "Swiggy") counts as a display name. Bank names that share a display name are one **sender** for "all from this sender" and "See all". Search finds either name.
 
 ## 4. Security and privacy
 
@@ -100,7 +102,7 @@ Jhapi PWA (GitHub Pages) on iPhone / iPad / Mac
 
 ## 5. Sync between the app and the sheet
 
-- **Pull** (every open, foreground after a minute, back online, Sync now): the script reads all three tabs. Rows typed by hand get an ID and an `Updated` time and are rewritten in the standard layout. Rows it cannot read (no usable date or amount) are listed as problems in Settings and left alone.
+- **Pull** (every open, foreground after a minute, back online, Sync now): the script reads every synced tab (Transactions, Statements, Review, Rules, Names, Holdings, Net worth, Goals). Rows typed by hand get an ID and an `Updated` time and are rewritten in the standard layout. Rows it cannot read (no usable date or amount) are listed as problems in Settings and left alone.
 - **Push** (after every edit in the app): the app sends only changed rows, each with a new `Updated` time. For each row:
   - not in the sheet: added;
   - in the sheet with an older `Updated`: replaced;
@@ -185,26 +187,23 @@ Built for **iPhone and iPad in Safari**. Phone layout uses the 390px design widt
 
 - **iPhone** (under 700px wide): one column, bottom tab bar, safe-area padding for the home indicator.
 - **iPad** (700px and wider, portrait and landscape, including Split View): a side bar instead of the bottom tabs, and two columns where it helps: list and detail side by side for Transactions and Portfolio, and Dashboard cards in a grid. Today the side bar and the two-column Home grid are built; list-and-detail side by side comes with M5.
-- Touch first: 44px targets, no hover-only controls, inputs at 16px or larger so Safari does not zoom in, and the right keyboards (`inputmode="decimal"` for amounts).
+- Touch first: 44px targets, no hover-only controls (hover highlights only on devices with a pointer, so a tapped row does not stay lit on iPhone), inputs at 16px or larger so Safari does not zoom in, and the right keyboards (`inputmode="decimal"` for amounts).
 - Works with the iPad keyboard and trackpad, and with Dynamic Type sizes.
 
 | Screen | What it shows |
 |---|---|
-| Home ✅ (first cut) | This month's spending and money received, needs-review banner, card bills due, spending by category, accounts with the latest balance a bank email gave, recent transactions. Net worth and the time-range chart come with M5 |
-| Transactions ✅ | All / Needs review tabs, search, "show receipts", grouped by day. Needs review lists Not parsed and Blocked emails with **Add by hand**, **Mark done** and **Read bank emails now** |
-| Add / edit transaction ✅ | Money out/in, amount, date, payee, category, account, note, "do not count", delete |
-| Settings ✅ | Connect the sheet (web app URL and secret code), last sync and last email run, rows the sheet could not read, Sync now, Read bank emails now, Disconnect this device |
-| Portfolio ✅ | Net worth from holdings, then each class (Retirement, Market, Deposits, Gold & other, Liabilities) with its total; each holding shows how its value was found (CALC, PRICE, EMI, MANUAL) and what is missing |
+| Home ✅ | This month's spending and money received, needs-review banner, card bills due, net worth with a 1M/3M/6M/1Y/FY/All chart, goals, spending by category, accounts with the latest balance a bank email gave, recent transactions (with display names) |
+| Transactions ✅ | All / Needs review tabs, search (bank name or display name, category, amount), "show receipts", grouped by day. Each row shows the display name, the bank's name in small type under it when they differ, then account · category · time. **Pick** turns rows into checkboxes with a bar above the tab bar: **Pick all shown**, **Set category**, **Don't count**, **Count again**. Needs review lists Not parsed and Blocked emails with **Add by hand**, **Mark done** and **Read bank emails now** |
+| Add / edit transaction ✅ | **See all N from <sender>**, money out/in, amount, date, payee, **Show as** (display name for every row with this payee), category, **Also use <category> for the N other transactions from <sender>**, **Always use <category> for <payee>, including future emails** (a rule), account, note, "do not count", delete |
+| Settings ✅ | Connect the sheet (web app URL and secret code), last sync and last email run, rows the sheet could not read, Sync now, Read bank emails now, category rules, **display names** (each with Remove), Disconnect this device |
+| Portfolio ✅ | Net worth from holdings, then each class (Retirement, Market, Deposits, Gold & other, Liabilities) with its total; each holding shows how its value was found (CALC, PRICE, EMI, MANUAL) and what is missing; Update prices now |
 | Add / edit holding ✅ | Type picker grouped by class, then only the fields that type needs, with a live "value today" preview |
-| Goals ✅ | On track / behind counts and monthly SIP gap; a card per goal with cost today and in the target year, funded %, SIP needed vs planned, chance of reaching it |
+| Goals ✅ | On track / behind counts and monthly SIP gap; a card per goal with cost today and in the target year, funded %, SIP needed vs planned, chance of reaching it; a warning when a holding is set aside more than 100% |
 | Goal detail ✅ | Name, cost, year, inflation, SIP, optional return; a share box for each holding; live cost in target year, set aside today, SIP needed, forecast band and chance |
+| EPF, Loan, other holding detail (M5c) | Balance, breakdown, rates by year, events (prepayments, rate changes), the matching actions |
+| CAS import (M5c/M8) | Import a CAS statement into mutual fund and demat holdings |
+| AI Outlook and asset detail (M7) | Portfolio and per-class ranges, assumption changes, drivers, track record |
 | Unlock (M8) | Passkey or passphrase when encryption arrives |
-| Portfolio | Net worth and liquid amount, holdings grouped by class with source badge (AUTO, CAS, CALC, MANUAL) and value date, + Add entry |
-| Add entry | Search and type picker, CAS import |
-| EPF, Loan, other holding detail | Balance, breakdown, rates by year, events, the matching actions |
-| Goals | On track / behind counts, SIP gap, a card per goal |
-| Goal detail | Cost today and at target year, funded %, SIP needed, forecast band, tagged holdings |
-| AI Outlook and asset detail | Portfolio and per-class ranges, assumption changes, drivers, track record |
 
 ## 10. Build plan
 

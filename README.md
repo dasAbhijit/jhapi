@@ -2,14 +2,14 @@
 
 Personal finance tracker in rupees: bank and card transactions read automatically from bank alert emails, every kind of asset and loan, net worth, goals and an AI outlook.
 
-**Live app:** https://dasabhijit.github.io/jhapi/ (bank emails → your own Google Sheet → this app; holdings and goals are next)
+**Live app:** https://dasabhijit.github.io/jhapi/ (bank emails → your own Google Sheet → this app)
 
-**Status:** M0, M1 and M4 (email reading and two-way sheet sync) are built and tested. See the build plan in [docs/DESIGN.md](docs/DESIGN.md#10-build-plan).
+**Status:** built and live: email reading and two-way sheet sync (M4), display names and changing many transactions at once (M4d), holdings, prices and net worth (M5a–b), goals with forecasts (M6). Next: EPF/PPF rates by year and loan prepayments (M5c), AI Outlook (M7), encryption and CAS import (M8). See the build plan in [docs/DESIGN.md](docs/DESIGN.md#10-build-plan).
 
 - **Requirements:** [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)
 - **Design and build plan:** [docs/DESIGN.md](docs/DESIGN.md)
 - **Owner setup (Jhapi's sheet and script, connecting devices):** [docs/admin/setup.md](docs/admin/setup.md)
-- **Screen mockups:** [design canvas](https://claude.ai/artifact/UNS95CTG4QsjUPiycrECjM) (private)
+- **Screen mockups:** [design canvas](https://claude.ai/artifact/UNS95CTG4QsjUPiycrECjM) (private). The top rows are the first concepts; the "As built" row matches the live app
 
 Made for iPhone and iPad, in Safari.
 
@@ -30,7 +30,8 @@ npm run build:cloud  # rebuild cloud/Code.gs after changing parsers, src/core or
 ## Layout
 
 ```
-src/core/          money, dates, calculators, records, sheet layout, DKIM check (pure, tested)
+src/core/          money, dates, calculators, records, display names, holdings, prices, net worth,
+                   goals, forecast, sheet layout, DKIM check (pure, tested)
 src/core/parsers/  bank email parsers (shared with the script)
 src/cloud/         what the script bundles, plus a fake of Google's services for tests
 src/data/          sheet client, device storage, sync store, summaries
