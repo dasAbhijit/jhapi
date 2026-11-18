@@ -34,7 +34,7 @@ Every requirement starts as **Planned**. The milestone column refers to the buil
 | A7 | When a row was edited in the sheet after the app's edit, the sheet wins and the app says so | M4b | Auto (script test) |
 | A8 | A push with any bad record is refused whole and changes nothing | M4b | Auto |
 | A9 | Disconnect this device removes the URL, code, copy of the sheet and unsent changes from the device | M4b | Built; Open for a hand check |
-| A10 | Data on the device is encrypted, unlocked by passphrase or passkey | M8 | Planned |
+| A10 | Data on the device can be encrypted, unlocked by a passkey (Face ID or Touch ID) | M8a | Auto (vault, passkey and lock tests). Live check on the owner's iPhone and iPad |
 | A11 | Jhapi runs on its own web origin, so no other app's pages can read what it keeps on the device | — | **Not met**: it shares `dasabhijit.github.io` with Bhag. Owner to choose a fix (see DESIGN risks) |
 
 ### B. Setup

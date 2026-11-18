@@ -2,7 +2,7 @@
 
 A personal finance tracker for Indian money: bank and card transactions read automatically from bank alert emails, plus every kind of asset and loan (EPF, PPF, NPS, mutual funds, stocks, FDs, gold, property, home loan), goals with forecasts, a chat to ask about your money, and an AI outlook. Amounts are in rupees (₹). See [Requirements](REQUIREMENTS.md) for what it must do and how each item will be checked.
 
-**Status:** M0, M1, M4a–d, M5a–b and M6 are built and tested; the app is live at https://dasabhijit.github.io/jhapi/. M5c, M7 and M8 are next. See section 10.
+**Status:** M0, M1, M4a–d, M5a–b, M6 and M8a (passkey lock) are built and tested; the app is live at https://dasabhijit.github.io/jhapi/. M5c, M7 and the rest of M8 are next. See section 10.
 
 Jhapi (ঝাঁপি) is short for *Lokkhir Jhapi*, the small pot of savings kept in many Bengali homes.
 
@@ -22,7 +22,7 @@ Screen mockups are on the [design canvas](https://claude.ai/artifact/UNS95CTG4Qs
 | One parser, two places | The parsers are written once in TypeScript (`src/core/parsers`), tested in CI, and **bundled into the script** (`cloud/Code.gs`, built by `npm run build:cloud`). CI fails if the committed `Code.gs` is out of date | The script and the app can never disagree about what an email means |
 | Sync | The script is also a **web app**. The app calls it with a secret code: `pull` returns everything, `push` sends changed rows. Merge is **row by row, newer edit wins** (the `Updated` column). Edits typed into the sheet are stamped by an `onEdit` trigger, so they flow back to the app | Two-way: email → sheet → app, app → sheet, and sheet edits → app |
 | When the app syncs | On every open, when it comes back to the foreground after a minute, when it goes back online, after every edit, and on **Sync now**. **Read bank emails now** asks the script to run at once | The owner asked for a fetch on every open |
-| Encryption | **Later.** For now the data is in the owner's private sheet and in the browser's storage on the owner's devices | The owner's call: get the flow working first |
+| Encryption | **On the device, with a passkey only** (M8a, 19 Nov 2026), switched on per device in Settings. The sheet is not encrypted: it is protected by the owner's Google account and the secret code | The owner chose passkey only, no passphrase, and to build it on `dasabhijit.github.io` now, knowing a move to another address means new passkeys |
 | AI | Google Gemini with the owner's own API key, kept only in the browser and called straight from it, for **Ask** (chat about the owner's money), unparsed emails (owner confirms) and the AI Outlook. Planned for M7. See section 8 | The same pattern as the owner's other apps' chat, with a key made only for Jhapi |
 | Currency | INR only, integer paise in the app, rupees in the sheet. Financial year April to March | |
 | Accessibility | Real buttons, links and labels, 44px touch targets, 4.5:1 contrast | |
@@ -96,7 +96,15 @@ Jhapi PWA (GitHub Pages) on iPhone / iPad / Mac
 - **The sheet** is private to the owner's Google account. The script runs as the owner and reads Gmail read-only (`cloud/appsscript.json` limits it to `gmail.readonly`, `spreadsheets.currentonly`, triggers and the sheet's menu).
 - **The web app** is deployed "execute as me, anyone can call", because the app on GitHub Pages cannot carry a Google login. Every call must include the **secret code**: 64 random hex characters made by **Jhapi > Set up**, kept in Script properties (never in a sheet cell), checked in constant time. Without it the web app answers nothing except "wrong secret code".
 - **The app** accepts only a `https://script.google.com/macros/s/…/exec` address, so the code is never sent anywhere else.
-- **On the device:** the connection (URL and code), the last copy of the sheet and unsent changes are in `localStorage`. **Disconnect this device** removes all of it. Encryption with a passphrase or passkey (the first plan's vault) is a later milestone.
+- **On the device:** the connection (URL and code), the last copy of the sheet and unsent changes are in `localStorage`. **Disconnect this device** removes all of it.
+- **Passkey lock (M8a, `src/data/vault.ts`, `passkey.ts`, `lock.tsx`):** off until turned on in Settings, per device.
+  - **Key:** the passkey's WebAuthn **PRF** output (32 secret bytes, given only after Face ID / Touch ID) → HKDF-SHA-256 → AES-GCM-256, not extractable and never stored. Needs iOS 18 or later with the passkey in Passwords (iCloud Keychain); a passkey without PRF is refused and nothing changes.
+  - **Storage:** each value is encrypted on its own with a fresh IV under `jhapi.vault.<name>`; the plain copies are removed only after the encrypted ones are written. `jhapi.lock` holds the passkey ID, PRF salt, the passkey's name ("Jhapi on iPhone") and a check value, so a wrong passkey is caught. No secrets in it.
+  - **While unlocked** the values are decrypted in memory (LocalStore stays synchronous) and every change is written back encrypted, in order. A sync still in flight when the lock is turned on or off cannot write plain data.
+  - **Locks** on every open or reload, after 5 minutes in the background, and on **Lock now**. The lock screen shows nothing from the data.
+  - **Each device has its own passkey** (a random user ID, named after the device). The passkey belongs to `dasabhijit.github.io`; moving Jhapi to another address means turning the lock on again there.
+  - **Lost passkey:** the lock screen's "Can't use your passkey?" forgets this device's copy (unsynced changes are lost) and the owner reconnects. The sheet keeps everything.
+  - **Limits:** it protects the copy on the device, not the sheet. While Jhapi shares its origin with Bhag (A11), Bhag's pages could ask for the same passkey; the lock is only as strong as Bhag's code.
 - **Gemini key** (M7): in `localStorage` on each device only, sent only to `generativelanguage.googleapis.com` in the `x-goog-api-key` header (never in a URL), never in the sheet, a push or a backup. Disconnect and **Remove** clear it. What Gemini is sent is set out in section 8.1.
 - **Never in the repo:** real emails (`samples/` is git-ignored), the secret code, the web app URL.
 - **Pushes are checked first:** a request with any bad record (amount, date, type, timestamps, field lengths) is refused whole, so a bad request changes nothing.
@@ -242,7 +250,7 @@ Built for **iPhone and iPad in Safari**. Phone layout uses the 390px design widt
 | Ask (M7) | Chat about spending, payees, subscriptions, holdings, loans and goals, with a one-time "what Gemini sees" card, chips, streamed answers, "What Gemini saw" under each answer, links into Transactions, and suggested-change cards with Apply |
 | Settings: Gemini (M7) | Key (Save, Test key, Remove), model name, "Let Ask suggest changes", what Gemini sees |
 | AI Outlook and asset detail (M7) | Portfolio and per-class ranges, assumption changes, drivers, track record |
-| Unlock (M8) | Passkey or passphrase when encryption arrives |
+| Lock screen ✅ | "Jhapi is locked", **Unlock with passkey**, the passkey's name, and "Can't use your passkey?" → **Forget this device's copy**. Settings has a **Passkey lock** card: Turn on; when on, Lock now and Turn off |
 
 ## 10. Build plan
 
@@ -261,7 +269,8 @@ Re-planned on 17 Nov 2026 when the owner chose the Google Sheet as the store.
 | M5c | EPF/PPF/SSY declared rates by year; loan rate changes and prepayments entered in the app; CAS statement import | Owner's EPF and loan match their statements |
 | M6 ✅ | Goals tab synced both ways; Goals and goal detail screens; holdings set aside by share; SIP needed; 1,000-run forecast band and chance; over-100% warning; goals on Home | Round trip: a goal with a 50% share of a fund lands in the sheet and shows BEHIND with its chance |
 | M7 | Gemini key in Settings; **Ask** (chat with lookups, "What Gemini saw", suggested changes); AI Outlook; Gemini fallback for unparsed emails | Tests with a fake Gemini pass (section 8.1); Ask answers "food this month vs last" correctly with a real key on the owner's iPhone |
-| M8 | Encryption on the device (passphrase or passkey), CAS PDF import, CSV export, user guide in `docs/` synced to GitBook | Installed on the owner's phone and in daily use |
+| M8a ✅ | Passkey lock: data on the device encrypted with a key from the passkey's PRF; lock screen; auto-lock; turn off; forget this device | Tests: nothing readable left in storage once on; lock, unlock, wrong passkey, 5-minute auto-lock, turn off, forget. Live check on the owner's iPhone and iPad |
+| M8 | CAS PDF import, CSV export, user guide in `docs/` synced to GitBook | Installed on the owner's phone and in daily use |
 
 ## 11. Risks
 
@@ -272,9 +281,9 @@ Re-planned on 17 Nov 2026 when the owner chose the Google Sheet as the store.
 | Phishing email that looks like a bank | DKIM and sender-domain check; BLOCKED items never touch balances |
 | Safari deletes website data after 7 days without a visit | The sheet is the copy to trust; the next open pulls everything again. Only the connection needs re-entering |
 | Apps Script quotas | One person's bank mail is far below Gmail read limits |
-| The sheet holds transactions and unparsed email text in plain form | It is the owner's own Google account, which already holds the same emails. Encryption is planned (M8) |
+| The sheet holds transactions and unparsed email text in plain form | It is the owner's own Google account, which already holds the same emails. The sheet stays plain; only the copy on each device is encrypted (M8a) |
 | The web app answers anyone who has the URL and code | 64-character random code, constant-time check, never in the repo or the sheet; Disconnect removes it from a device; a new code can be made in Script properties |
-| **Jhapi and Bhag share the browser origin `dasabhijit.github.io`** (GitHub Pages serves both from one host). Their saved keys do not collide (`jhapi.*`), but the browser lets pages on one origin read each other's storage, so Bhag's code could read Jhapi's saved secret code | Open, owner to decide. Options: a custom domain for Jhapi (e.g. `jhapi.<your-domain>`, still on GitHub Pages), or hosting Jhapi under a separate GitHub account or organisation. Both give Jhapi its own origin |
+| **Jhapi and Bhag share the browser origin `dasabhijit.github.io`** (GitHub Pages serves both from one host). Their saved keys do not collide (`jhapi.*`), but the browser lets pages on one origin read each other's storage, so Bhag's code could read Jhapi's saved secret code. The passkey lock (M8a) encrypts that copy, but Bhag's pages could still ask for the same passkey | Open, owner to decide (19 Nov 2026: passkey lock built here anyway; a move means new passkeys). Options: a custom domain for Jhapi (e.g. `jhapi.<your-domain>`, still on GitHub Pages), or hosting Jhapi under a separate GitHub account or organisation. Both give Jhapi its own origin |
 | A device clock far behind Google's | Its edits look older than the sheet's rows and lose. Phones set their clocks from the network, so this is rare; the app says when an edit was not saved |
 | AMFI or Google Finance unavailable or changes format | The day's prices are skipped and the Log says why; holdings keep their last price and date |
 | Script and app disagree about an email | The script runs the app's own bundled parsers; CI fails if `Code.gs` is stale |

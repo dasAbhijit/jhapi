@@ -4,7 +4,7 @@ Personal finance tracker in rupees: bank and card transactions read automaticall
 
 **Live app:** https://dasabhijit.github.io/jhapi/ (bank emails → your own Google Sheet → this app)
 
-**Status:** built and live: email reading and two-way sheet sync (M4), display names and changing many transactions at once (M4d), holdings, prices and net worth (M5a–b), goals with forecasts (M6). Next: EPF/PPF rates by year and loan prepayments (M5c), Ask (chat about your money with your own Gemini key) and AI Outlook (M7), encryption and CAS import (M8). See the build plan in [docs/DESIGN.md](docs/DESIGN.md#10-build-plan).
+**Status:** built and live: email reading and two-way sheet sync (M4), display names and changing many transactions at once (M4d), holdings, prices and net worth (M5a–b), goals with forecasts (M6), passkey lock with encryption on the device (M8a). Next: EPF/PPF rates by year and loan prepayments (M5c), Ask (chat about your money with your own Gemini key) and AI Outlook (M7), CAS import and CSV export (M8). See the build plan in [docs/DESIGN.md](docs/DESIGN.md#10-build-plan).
 
 - **Requirements:** [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)
 - **Design and build plan:** [docs/DESIGN.md](docs/DESIGN.md)
@@ -43,4 +43,4 @@ docs/              design, requirements, owner setup
 
 ## Stack
 
-React, TypeScript and Vite as a PWA on GitHub Pages, set up like [Bhag](../bhag). Data lives in **Jhapi's own Google Sheet**. Its own Apps Script reads bank alert emails every 10 minutes (read-only, DKIM-checked) and answers the app as a web app protected by a secret code. The app pulls on every open and pushes edits back. Encryption on the device comes later.
+React, TypeScript and Vite as a PWA on GitHub Pages, set up like [Bhag](../bhag). Data lives in **Jhapi's own Google Sheet**. Its own Apps Script reads bank alert emails every 10 minutes (read-only, DKIM-checked) and answers the app as a web app protected by a secret code. The app pulls on every open and pushes edits back. A passkey lock in Settings encrypts the copy on each device.

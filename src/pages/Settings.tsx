@@ -1,10 +1,12 @@
 import { useState, type FormEvent } from 'react'
+import { useLock, type Lock } from '../data/lockContext'
 import { useStore } from '../data/storeContext'
 
 const GUIDE = 'https://github.com/dasAbhijit/jhapi/blob/main/docs/admin/setup.md'
 
 export default function Settings() {
   const { config, connect, disconnect, data, sync, syncing, readInbox, readingInbox, error, saveRule, setDisplayName } = useStore()
+  const lock = useLock()
   const rules = (data?.rules ?? []).filter((r) => !r.deleted)
   const names = (data?.names ?? []).filter((a) => !a.deleted).sort((a, b) => a.showAs.localeCompare(b.showAs))
   const [url, setUrl] = useState('')
@@ -122,12 +124,70 @@ export default function Settings() {
           )}
         </section>
       )}
+      {lock && <PasskeyCard lock={lock} />}
       <section className="card stack">
         <h2>Privacy</h2>
         <p className="muted">
-          Your data lives in your own Google Sheet, in your Google account, and on this device. The sheet's script only reads emails from your banks' alert addresses and never changes your mail. Encryption on this device is planned.
+          Your data lives in your own Google Sheet, in your Google account, and on this device. The sheet's script only reads emails from your banks' alert addresses and never changes your mail.{' '}
+          {lock?.status === 'on' ? 'The copy on this device is encrypted, and only your passkey opens it.' : 'Turn on the passkey lock to encrypt the copy on this device.'}
         </p>
       </section>
     </div>
+  )
+}
+
+function PasskeyCard({ lock }: { lock: Lock }) {
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const run = async (f: () => Promise<void>) => {
+    setErr(null)
+    setBusy(true)
+    try {
+      await f()
+    } catch (x) {
+      setErr((x as Error).message)
+      setBusy(false)
+    }
+  }
+  return (
+    <section className="card stack">
+      <h2>Passkey lock</h2>
+      {lock.status === 'on' ? (
+        <>
+          <p className="muted">
+            On. The copy of your data on this device is encrypted. Jhapi asks for your passkey every time it opens, and after {lock.autoLockMinutes} minutes in the background.
+          </p>
+          <p className="muted small">The passkey is “{lock.label}” in Passwords. Each device has its own.</p>
+          <div className="btn-row">
+            <button type="button" className="btn" disabled={busy} onClick={() => void run(lock.lockNow)}>Lock now</button>
+            <button
+              type="button"
+              className="btn danger"
+              disabled={busy}
+              onClick={() => {
+                if (window.confirm('Turn off the passkey lock? The copy on this device will be stored without encryption.')) void run(lock.disable)
+              }}
+            >
+              Turn off
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="muted">
+            Lock Jhapi with a passkey (Face ID or Touch ID). The copy of your data on this device is then encrypted, and only your passkey can open it. Your sheet is not changed.
+          </p>
+          {lock.supported ? (
+            <button type="button" className="btn primary" disabled={busy} onClick={() => void run(lock.enable)}>
+              {busy ? 'Waiting for passkey…' : 'Turn on passkey lock'}
+            </button>
+          ) : (
+            <p className="muted">This browser can't make passkeys.</p>
+          )}
+          <p className="muted small">If you lose the passkey, this device forgets its copy and you reconnect with the web app URL and secret code. Nothing in the sheet is lost.</p>
+        </>
+      )}
+      {err && <p className="banner err" role="alert">{err}</p>}
+    </section>
   )
 }

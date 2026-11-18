@@ -215,3 +215,10 @@ details summary { cursor: pointer; min-height: 32px; font-size: 14px; color: var
 .band-label { font-size: 12px; fill: var(--neg); }
 .band-axis { font-size: 12px; fill: var(--muted); }
 .banner.ok-banner { background: var(--pos-soft); color: var(--pos); border: 1px solid currentColor; }
+
+/* Passkey lock screen */
+.lock-screen { min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 24px 16px calc(24px + env(safe-area-inset-bottom)); background: var(--bg); }
+.lock-box { width: 100%; max-width: 420px; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 24px 20px; }
+.lock-box h1 { margin: 0; font-size: 24px; }
+.lock-box p { margin: 0; }
+.lock-box summary { min-height: 44px; display: flex; align-items: center; font-weight: 600; cursor: pointer; }

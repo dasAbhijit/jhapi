@@ -2,7 +2,7 @@
  * What the app keeps on this device: the sheet connection, the last copy of the sheet (so the app
  * opens instantly and works offline), and changes not yet sent to the sheet.
  *
- * Kept in localStorage for now. Encryption on the device comes later (DESIGN.md, section 4).
+ * Kept in localStorage: as plain JSON, or encrypted when the passkey lock is on (vault.ts, lock.tsx).
  * Every access is wrapped: Safari private browsing and cleared site data must not crash the app.
  */
 import type { Holding } from '../core/holdings'
@@ -40,6 +40,8 @@ export interface KV {
   get(key: string): string | null
   set(key: string, value: string): void
   remove(key: string): void
+  /** Every key stored, where the store can list them. */
+  keys?(): string[]
 }
 
 export const browserKV: KV = {
@@ -64,11 +66,18 @@ export const browserKV: KV = {
       /* ignore */
     }
   },
+  keys: () => {
+    try {
+      return Object.keys(localStorage)
+    } catch {
+      return []
+    }
+  },
 }
 
 export function memoryKV(): KV {
   const m = new Map<string, string>()
-  return { get: (k) => m.get(k) ?? null, set: (k, v) => void m.set(k, v), remove: (k) => void m.delete(k) }
+  return { get: (k) => m.get(k) ?? null, set: (k, v) => void m.set(k, v), remove: (k) => void m.delete(k), keys: () => [...m.keys()] }
 }
 
 const KEYS = { config: 'jhapi.sheet', snapshot: 'jhapi.snapshot', pending: 'jhapi.pending', device: 'jhapi.device' }
