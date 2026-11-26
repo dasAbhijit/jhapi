@@ -1,4 +1,5 @@
 import { NavLink, Route, Routes } from 'react-router-dom'
+import CasImport from './pages/CasImport.tsx'
 import GoalEdit from './pages/GoalEdit.tsx'
 import Goals from './pages/Goals.tsx'
 import HoldingEdit from './pages/HoldingEdit.tsx'
@@ -27,6 +28,7 @@ export default function App() {
           <Route path="/transactions/:id" element={<TxnEdit />} />
           <Route path="/portfolio" element={<Portfolio />} />
           <Route path="/portfolio/new" element={<HoldingEdit key="new" />} />
+          <Route path="/portfolio/import" element={<CasImport />} />
           <Route path="/portfolio/:id" element={<HoldingEdit />} />
           <Route path="/goals" element={<Goals />} />
           <Route path="/goals/new" element={<GoalEdit key="new" />} />

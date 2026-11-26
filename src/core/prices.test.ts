@@ -19,8 +19,9 @@ const h = (p: Partial<Holding>): Holding => ({ ...blankHolding(p.type ?? 'mf', p
 describe('AMFI NAV file', () => {
   it('reads scheme lines, skips headings and N.A.', () => {
     const m = parseAmfiNav(NAV_FILE)
-    expect([...m.keys()]).toEqual(['100001', '100002'])
+    expect([...m.keys()]).toEqual(['100001', 'INF000A01AA1', '100002', 'INF000A01AA2', 'INF000A01AA3'])
     expect(m.get('100001')).toEqual({ pricePaise: 8765, date: '2026-11-14' })
+    expect(m.get('INF000A01AA3')).toEqual({ pricePaise: 100000, date: '2026-11-15' })
   })
 })
 
@@ -28,6 +29,7 @@ describe('price keys', () => {
   it('funds need a numeric AMFI code; stocks get NSE: by default', () => {
     expect(priceKey(h({ type: 'mf', code: '100001' }))).toEqual({ source: 'amfi', key: '100001' })
     expect(priceKey(h({ type: 'mf', code: 'Flexi cap' }))).toBeNull()
+    expect(priceKey(h({ type: 'mf', code: 'inf000a01aa1' }))).toEqual({ source: 'amfi', key: 'INF000A01AA1' })
     expect(priceKey(h({ type: 'stock', code: 'tcs' }))).toEqual({ source: 'google', key: 'NSE:TCS' })
     expect(priceKey(h({ type: 'etf', code: 'BOM:500325' }))).toEqual({ source: 'google', key: 'BOM:500325' })
     expect(priceKey(h({ type: 'stock', code: '=HYPERLINK("x")' }))).toBeNull()

@@ -1622,15 +1622,21 @@ var JhapiCore = (() => {
       const nav = Number(parts[4].trim());
       const date = looseDate(parts[5].trim());
       if (!Number.isFinite(nav) || nav <= 0 || !date) continue;
-      out.set(parts[0].trim(), { pricePaise: Math.round(nav * 100), date });
+      const q = { pricePaise: Math.round(nav * 100), date };
+      out.set(parts[0].trim(), q);
+      for (const isin of [parts[1], parts[2]]) if (ISIN.test(isin.trim())) out.set(isin.trim(), q);
     }
     return out;
   }
+  var ISIN = /^IN[A-Z0-9]{9}\d$/;
   function priceKey(h) {
     if (h.deleted) return null;
     const code = h.code.trim();
     if (!code) return null;
-    if (h.type === "mf") return /^\d{4,7}$/.test(code) ? { source: "amfi", key: code } : null;
+    if (h.type === "mf") {
+      const c = code.toUpperCase();
+      return /^\d{4,7}$/.test(c) || ISIN.test(c) ? { source: "amfi", key: c } : null;
+    }
     if (h.type === "stock" || h.type === "etf" || h.type === "sgb") {
       const sym = code.toUpperCase().replace(/\s+/g, "");
       if (!/^([A-Z]+:)?[A-Z0-9&._-]{1,20}$/.test(sym)) return null;

@@ -85,7 +85,7 @@ Every requirement starts as **Planned**. The milestone column refers to the buil
 | E5 | Loans show outstanding principal, EMI, rate, EMIs left, interest paid, and handle rate changes and prepayments | M1, M5a | Outstanding and EMIs left shown on Portfolio (Auto). Rate changes and prepayments: calculated (Auto), entry screen planned |
 | E6 | Stocks, ETFs and SGBs are valued from daily prices; mutual funds from daily NAVs | M5b | Auto (script on fake AMFI and GOOGLEFINANCE); Open for the first real morning run |
 | E7 | EMI and contribution emails update the matching loan or holding | M5 | Planned |
-| E8 | The owner can import a CAS statement PDF for mutual funds and demat holdings | M8 | Planned |
+| E8 | The owner can import a CAS statement PDF for mutual funds and demat holdings; after that, fund values update every morning without another import | M8b | Auto (encrypted PDF through pdf.js, both layouts, import into the sheet, morning prices by ISIN); Open for the owner's own CAS |
 
 ### F. Net worth
 

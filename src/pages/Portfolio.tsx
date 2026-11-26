@@ -19,6 +19,7 @@ export default function Portfolio() {
         <h1>Portfolio</h1>
         <span className="btn-row">
           <Link className="btn small" to="/goals">Goals</Link>
+          <Link className="btn small" to="/portfolio/import">Import CAS</Link>
           <Link className="btn primary small" to="/portfolio/new">+ Add</Link>
         </span>
       </div>
@@ -36,6 +37,7 @@ export default function Portfolio() {
             Add your EPF, PPF, FDs, mutual funds, gold, property and loans. Values are worked out from rates, dates and prices, or you type them. You can also add rows in the sheet's Holdings tab.
           </p>
           <Link className="btn primary" to="/portfolio/new">Add your first holding</Link>
+          <Link className="btn" to="/portfolio/import">Import mutual funds from a CAS</Link>
         </section>
       ) : (
         <div className="grid">

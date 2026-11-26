@@ -14,7 +14,7 @@ function labelFor(k: FieldKey, type: HoldingType): string {
   const loan = HOLDING_TYPES[type].cls === 'liabilities'
   switch (k) {
     case 'institution': return loan ? 'Lender' : 'Bank, fund house or broker'
-    case 'code': return type === 'mf' ? 'AMFI scheme code (for daily NAV)' : 'NSE symbol, e.g. NSE:TCS'
+    case 'code': return type === 'mf' ? 'AMFI scheme code or ISIN (for daily NAV)' : 'NSE symbol, e.g. NSE:TCS'
     case 'units': return 'Units'
     case 'pricePaise': return 'Price per unit (₹)'
     case 'investedPaise':

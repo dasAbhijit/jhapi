@@ -25,6 +25,8 @@ export interface Store {
   /** Show the bank's name `counterparty` as `showAs`; empty `showAs` removes the display name. */
   setDisplayName(counterparty: string, showAs: string): void
   saveHolding(h: Holding): void
+  /** Save several holdings in one go (CAS import). */
+  saveHoldings(hs: Holding[]): void
   saveGoal(g: Goal): void
   /** Save a category rule; with `apply`, also recategorise other transactions from the same payee. */
   saveRule(r: Rule, apply?: boolean): void

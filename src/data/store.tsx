@@ -221,6 +221,17 @@ export function StoreProvider({ children, local = new LocalStore(), transport }:
     [local, sync],
   )
 
+  const saveHoldings = useCallback(
+    (hs: Holding[]) => {
+      const now = new Date().toISOString()
+      const p = hs.reduce((acc, h) => queueHolding(acc, { ...h, updatedAt: now }), local.pending())
+      local.setPending(p)
+      setPending(p)
+      void sync()
+    },
+    [local, sync],
+  )
+
   const saveGoal = useCallback(
     (g: Goal) => {
       const p = queueGoal(local.pending(), { ...g, updatedAt: new Date().toISOString() })
@@ -268,6 +279,7 @@ export function StoreProvider({ children, local = new LocalStore(), transport }:
     refreshingPrices,
     saveRule,
     saveHolding,
+    saveHoldings,
     config,
     data,
     pendingCount: pending.transactions.length + pending.review.length + pending.rules.length + pending.names.length + pending.holdings.length + pending.goals.length,

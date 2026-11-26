@@ -1,7 +1,7 @@
 /**
  * Prices for market holdings. Bundled into the Apps Script, which fetches them every morning:
  * - Mutual funds: AMFI's daily file of every scheme's NAV (https://www.amfiindia.com/spages/NAVAll.txt),
- *   matched by the holding's AMFI scheme code.
+ *   matched by the holding's AMFI scheme code or ISIN (a CAS import stores the ISIN).
  * - Stocks, ETFs and SGBs: Google Sheets' own GOOGLEFINANCE, by the holding's symbol (e.g. NSE:TCS).
  */
 import { looseDate } from './parsers/text'
@@ -17,6 +17,7 @@ export interface Quote {
  * AMFI lines look like
  * `119551;INF209KA12Z1;INF209KA13Z9;Aditya Birla Sun Life Banking & PSU Debt Fund - DIRECT - IDCW;105.4527;14-Nov-2026`.
  * Headings and fund-house names have no semicolons and are skipped. NAVs that are not numbers ("N.A.") are skipped.
+ * Each NAV is filed under the scheme code and under both ISINs (payout/growth and reinvestment), when given.
  */
 export function parseAmfiNav(text: string): Map<string, Quote> {
   const out = new Map<string, Quote>()
@@ -26,17 +27,25 @@ export function parseAmfiNav(text: string): Map<string, Quote> {
     const nav = Number(parts[4].trim())
     const date = looseDate(parts[5].trim())
     if (!Number.isFinite(nav) || nav <= 0 || !date) continue
-    out.set(parts[0].trim(), { pricePaise: Math.round(nav * 100), date })
+    const q = { pricePaise: Math.round(nav * 100), date }
+    out.set(parts[0].trim(), q)
+    for (const isin of [parts[1], parts[2]]) if (ISIN.test(isin.trim())) out.set(isin.trim(), q)
   }
   return out
 }
+
+/** An Indian ISIN: IN, 9 letters or digits, a check digit (INF… for funds, INE… for shares). */
+export const ISIN = /^IN[A-Z0-9]{9}\d$/
 
 /** Which price source a holding uses, and its key there. null if it has none. */
 export function priceKey(h: Pick<Holding, 'type' | 'code' | 'deleted'>): { source: 'amfi' | 'google'; key: string } | null {
   if (h.deleted) return null
   const code = h.code.trim()
   if (!code) return null
-  if (h.type === 'mf') return /^\d{4,7}$/.test(code) ? { source: 'amfi', key: code } : null
+  if (h.type === 'mf') {
+    const c = code.toUpperCase()
+    return /^\d{4,7}$/.test(c) || ISIN.test(c) ? { source: 'amfi', key: c } : null
+  }
   if (h.type === 'stock' || h.type === 'etf' || h.type === 'sgb') {
     // A bare symbol is taken as NSE.
     const sym = code.toUpperCase().replace(/\s+/g, '')
