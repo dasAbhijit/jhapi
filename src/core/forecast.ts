@@ -1,5 +1,5 @@
 /**
- * Goal forecast: many simulated futures of "money set aside now + a monthly SIP", each month's return
+ * Goal forecast: many simulated futures of "money set aside now + a monthly SIP (topped up yearly)", each month's return
  * drawn from a normal distribution with the expected yearly return and volatility. Results are shown in
  * today's rupees (divided by inflation), so they compare directly with the goal's cost today.
  *
@@ -11,6 +11,8 @@ import type { Paise } from './money'
 export interface ForecastInput {
   nowPaise: Paise
   sipPaise: Paise
+  /** Yearly top-up of the SIP, % (default 0). */
+  topUpPct?: number
   months: number
   /** Expected yearly return, % (e.g. 11). */
   returnPct: number
@@ -76,11 +78,13 @@ export function forecast(input: ForecastInput): Forecast {
   for (let m = 12; m < months; m += 12) marks.add(m)
   marks.add(months)
   const at = new Map<number, number[]>([...marks].map((m) => [m, []]))
+  const step = 1 + (input.topUpPct ?? 0) / 100
+  const sips = Array.from({ length: months + 1 }, (_, m) => input.sipPaise * Math.pow(step, Math.floor(Math.max(0, m - 1) / 12)))
 
   for (let k = 0; k < runs; k++) {
     let v = input.nowPaise
     for (let m = 1; m <= months; m++) {
-      v = (v + input.sipPaise) * Math.exp(muM + sigmaM * normal(r))
+      v = (v + sips[m]) * Math.exp(muM + sigmaM * normal(r))
       const bucket = at.get(m)
       if (bucket) bucket.push(v / Math.pow(inflM, m))
     }

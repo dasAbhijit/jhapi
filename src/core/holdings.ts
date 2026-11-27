@@ -28,11 +28,11 @@ interface TypeInfo {
 export const HOLDING_TYPES = {
   epf: { label: 'EPF / VPF', cls: 'retirement', method: 'calc', fields: ['institution', 'investedPaise', 'startDate', 'ratePct', 'monthlyPaise'] },
   ppf: { label: 'PPF', cls: 'retirement', method: 'calc', fields: ['institution', 'investedPaise', 'startDate', 'ratePct', 'monthlyPaise', 'maturityDate'] },
-  nps: { label: 'NPS', cls: 'retirement', method: 'price', fields: ['institution', 'units', 'pricePaise', 'valuePaise', 'investedPaise'] },
+  nps: { label: 'NPS', cls: 'retirement', method: 'price', fields: ['institution', 'units', 'pricePaise', 'valuePaise', 'investedPaise', 'monthlyPaise'] },
   ssy: { label: 'Sukanya Samriddhi', cls: 'retirement', method: 'calc', fields: ['institution', 'investedPaise', 'startDate', 'ratePct', 'monthlyPaise', 'maturityDate'] },
-  mf: { label: 'Mutual fund', cls: 'market', method: 'price', fields: ['institution', 'code', 'units', 'pricePaise', 'investedPaise'] },
-  stock: { label: 'Stock', cls: 'market', method: 'price', fields: ['institution', 'code', 'units', 'pricePaise', 'investedPaise'] },
-  etf: { label: 'ETF', cls: 'market', method: 'price', fields: ['institution', 'code', 'units', 'pricePaise', 'investedPaise'] },
+  mf: { label: 'Mutual fund', cls: 'market', method: 'price', fields: ['institution', 'code', 'units', 'pricePaise', 'investedPaise', 'monthlyPaise'] },
+  stock: { label: 'Stock', cls: 'market', method: 'price', fields: ['institution', 'code', 'units', 'pricePaise', 'investedPaise', 'monthlyPaise'] },
+  etf: { label: 'ETF', cls: 'market', method: 'price', fields: ['institution', 'code', 'units', 'pricePaise', 'investedPaise', 'monthlyPaise'] },
   sgb: { label: 'Sovereign Gold Bond', cls: 'market', method: 'price', fields: ['code', 'units', 'pricePaise', 'investedPaise', 'maturityDate'] },
   fd: { label: 'Fixed deposit', cls: 'deposits', method: 'calc', compounding: 'quarterly', fields: ['institution', 'investedPaise', 'ratePct', 'startDate', 'maturityDate', 'compounding', 'payout'] },
   rd: { label: 'Recurring deposit', cls: 'deposits', method: 'calc', compounding: 'quarterly', fields: ['institution', 'monthlyPaise', 'ratePct', 'startDate', 'tenureMonths'] },
@@ -85,7 +85,7 @@ export interface Holding {
   maturityDate: ISODate | ''
   compounding: Compounding | ''
   payout: boolean
-  /** Monthly contribution (EPF/PPF/SSY) or RD installment. */
+  /** Monthly contribution (EPF/PPF/SSY/NPS), ongoing SIP (funds, stocks, ETFs) or RD installment. Goals count it. */
   monthlyPaise: Paise | null
   tenureMonths: number | null
   notes: string

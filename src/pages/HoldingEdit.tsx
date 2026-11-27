@@ -26,7 +26,7 @@ function labelFor(k: FieldKey, type: HoldingType): string {
     case 'maturityDate': return type === 'lent' ? 'Due date' : 'Maturity date'
     case 'compounding': return 'Interest compounds'
     case 'payout': return 'Interest is paid out (not added to the deposit)'
-    case 'monthlyPaise': return type === 'rd' ? 'Monthly installment (₹)' : 'Monthly contribution (₹)'
+    case 'monthlyPaise': return type === 'rd' ? 'Monthly installment (₹)' : HOLDING_TYPES[type].cls === 'market' ? 'Ongoing monthly SIP (₹, leave empty if none)' : 'Monthly contribution (₹)'
     case 'tenureMonths': return loan ? 'Loan length (months)' : 'Length (months)'
   }
   return k

@@ -5,7 +5,7 @@ import { blankHolding, type Holding } from './holdings'
 const L = (lakh: number) => Math.round(lakh * 1e7)
 const h = (p: Partial<Holding>): Holding => ({ ...blankHolding(p.type ?? 'mf', p.id ?? 'h'), ...p })
 const goal = (p: Partial<Goal>): Goal => ({
-  id: 'g', name: 'College', costTodayPaise: L(25), targetYear: 2036, inflationPct: 6, returnPct: null, sipPaise: 0, tags: [], notes: '',
+  id: 'g', name: 'College', costTodayPaise: L(25), targetYear: 2036, inflationPct: 6, returnPct: null, sipPaise: 0, topUpPct: 10, tags: [], notes: '',
   updatedAt: '', deleted: false, ...p,
 })
 
@@ -29,6 +29,27 @@ describe('goal view', () => {
     expect(v.returnPct).toBe(9)
     expect(v.brokenTags).toEqual(['gone', 'l'])
     expect(v.fundedTodayPaise).toBe(0)
+  })
+
+  it('counts the share of each tagged holding\'s SIP, plus the goal\'s own, all topped up yearly', () => {
+    const sipFund = h({ id: 's', type: 'mf', valuePaise: L(2), monthlyPaise: 1_000_000 }) // ₹10,000 a month
+    const epf = h({ id: 'e', type: 'epf', investedPaise: L(3), startDate: '2026-04-01', ratePct: 8.25, monthlyPaise: 400_000 })
+    const v = viewGoal(goal({ sipPaise: 300_000, tags: [{ holdingId: 's', pct: 50 }, { holdingId: 'e', pct: 25 }] }), [sipFund, epf], '2026-11-17')
+    expect(v.parts.map((p) => p.sipPaise)).toEqual([500_000, 100_000])
+    expect(v.ongoingSipPaise).toBe(600_000)
+    expect(v.totalSipPaise).toBe(900_000)
+    expect(v.topUpPct).toBe(10)
+
+    // The same goal with no top-up projects less and needs a higher starting SIP.
+    const flat = viewGoal(goal({ sipPaise: 300_000, topUpPct: 0, tags: [{ holdingId: 's', pct: 50 }, { holdingId: 'e', pct: 25 }] }), [sipFund, epf], '2026-11-17')
+    expect(flat.plan.projectedPaise).toBeLessThan(v.plan.projectedPaise)
+    expect(flat.plan.sipNeededPaise).toBeGreaterThan(v.plan.sipNeededPaise)
+    expect(flat.forecast.chance).toBeLessThanOrEqual(v.forecast.chance)
+  })
+
+  it('a goal saved before top-ups existed gets the default 10%', () => {
+    const old = { ...goal({}), topUpPct: undefined } as unknown as Goal
+    expect(viewGoal(old, [], '2026-11-17').topUpPct).toBe(10)
   })
 
   it('half-typed target years do not crash', () => {

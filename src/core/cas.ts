@@ -10,6 +10,8 @@
  *   numbers. A row is taken only when it holds units, price and value that agree (units × price ≈ value),
  *   so a row read the wrong way is dropped rather than imported wrong.
  *
+ * A detailed CAS also lists each purchase; a SIP instalment in the last 45 days gives the fund's ongoing SIP.
+ *
  * Funds (ISIN INF…) become mutual fund holdings priced every morning from AMFI by ISIN. Shares and
  * bonds (other ISINs) are listed too; the owner gives an NSE symbol to import them.
  */
@@ -30,6 +32,8 @@ export interface CasFund {
   navDate: ISODate | ''
   costPaise: Paise | null
   valuePaise: Paise
+  /** The ongoing SIP: the last SIP purchase, if it was within 45 days of the statement's end. Rounded to the rupee. */
+  sipPaise: Paise | null
 }
 
 export interface CasShare {
@@ -110,7 +114,29 @@ function findAsOf(text: string): ISODate | '' {
 
 const META = /Folio No|PAN\s*:|KYC|Nominee|Closing Unit|Opening Unit|Registrar|Advisor|Page \d|^\d{1,2}-[A-Za-z]{3}-\d{4}/i
 
-function readDetailed(lines: string[]): { funds: CasFund[]; unread: string[] } {
+/**
+ * The last SIP instalment in a folio's transactions, e.g.
+ * `05-Nov-2026 Purchase - Systematic 5,000.00 50.000 100.0000 150.000` or
+ * `05-Nov-2026 SIP Purchase-BSE - Instalment No 12 - 4,999.75 49.998 100.0000 150.000`.
+ * The amount is the first money figure followed by a units figure (3 decimals). Stamp duty makes it a
+ * little under the SIP, so it is rounded to the rupee. Withdrawals, transfers out and reversals are not SIPs.
+ */
+export function lastSip(block: string, asOf: ISODate | ''): Paise | null {
+  let found: { date: ISODate; paise: Paise } | null = null
+  for (const line of block.split('\n')) {
+    const m = /^(\d{1,2}-[A-Za-z]{3}-\d{4})\s+(.*)$/.exec(line)
+    if (!m || !/\b(?:Systematic|SIP)\b/i.test(m[2]) || /Withdraw|Redempt|Switch|Transfer|STP|SWP|Revers|Reject|\(/i.test(m[2])) continue
+    const amt = /(\d[\d,]*\.\d{2})\s+(\d[\d,]*\.\d{3})\b/.exec(m[2])
+    const date = looseDate(m[1])
+    const p = amt ? paise(amt[1]) : null
+    if (date && p && (!found || date >= found.date)) found = { date, paise: Math.round(p / 100) * 100 }
+  }
+  if (!found) return null
+  if (asOf && (Date.parse(asOf) - Date.parse(found.date)) / 86_400_000 > 45) return null
+  return found.paise
+}
+
+function readDetailed(lines: string[], asOf: ISODate | ''): { funds: CasFund[]; unread: string[] } {
   const text = lines.join('\n')
   const marks = [...text.matchAll(/ISIN\s*:\s*(IN[A-Z0-9]{10})/g)]
   const funds: CasFund[] = []
@@ -150,6 +176,7 @@ function readDetailed(lines: string[]): { funds: CasFund[]; unread: string[] } {
       navDate: nav ? (looseDate(nav[1].replace(/ /g, '-')) ?? '') : '',
       costPaise: cost ? paise(cost[1]) : null,
       valuePaise: value ? (paise(value[2]) ?? 0) : 0,
+      sipPaise: soldOut(u) ? null : lastSip(block, asOf),
     })
   })
   return { funds, unread }
@@ -199,7 +226,7 @@ function readRows(lines: string[], asOf: ISODate | ''): { funds: CasFund[]; shar
     if (isin.startsWith('INF')) {
       // A cost column, if any, is the number just before the units.
       const cost = t.at > 0 ? paise(nums[t.at - 1]) : null
-      funds.push({ isin, name: name || isin, amc: '', folios: [], units: t.units, navPaise: pricePaise, navDate: asOf, costPaise: cost, valuePaise })
+      funds.push({ isin, name: name || isin, amc: '', folios: [], units: t.units, navPaise: pricePaise, navDate: asOf, costPaise: cost, valuePaise, sipPaise: null })
     } else {
       shares.push({ isin, name: name || isin, units: t.units, pricePaise, valuePaise })
     }
@@ -219,6 +246,7 @@ function mergeFunds(funds: CasFund[]): CasFund[] {
     had.units = addUnits(had.units, f.units)
     had.valuePaise += f.valuePaise
     had.costPaise = had.costPaise === null && f.costPaise === null ? null : (had.costPaise ?? 0) + (f.costPaise ?? 0)
+    had.sipPaise = had.sipPaise === null && f.sipPaise === null ? null : (had.sipPaise ?? 0) + (f.sipPaise ?? 0)
     for (const x of f.folios) if (!had.folios.includes(x)) had.folios.push(x)
     if (!had.amc) had.amc = f.amc
     if (f.navDate > had.navDate) {
@@ -234,7 +262,7 @@ export function parseCas(lines: string[]): CasStatement {
   const text = tidy.join('\n')
   const asOf = findAsOf(text)
   if (/Closing Unit Balance/i.test(text) && /ISIN\s*:/.test(text)) {
-    const { funds, unread } = readDetailed(tidy)
+    const { funds, unread } = readDetailed(tidy, asOf)
     return { kind: 'detailed', asOf, funds: mergeFunds(funds), shares: [], unread }
   }
   const { funds, shares, unread } = readRows(tidy, asOf)
@@ -281,6 +309,8 @@ export function fundHolding(f: CasFund, base: Holding | null, newId: () => strin
     pricePaise: newer ? h.pricePaise : f.navPaise,
     priceDate: newer ? h.priceDate : f.navDate,
     investedPaise: f.costPaise ?? h.investedPaise,
+    // A SIP seen in the statement replaces the old figure; a sold-out fund has none; otherwise keep what the owner typed.
+    monthlyPaise: soldOut(f.units) ? null : (f.sipPaise ?? h.monthlyPaise),
     notes: base ? h.notes : [folios, 'from CAS'].filter(Boolean).join(' · '),
     deleted: false,
   }

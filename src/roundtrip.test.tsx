@@ -177,7 +177,8 @@ describe('app and sheet round trip', () => {
   it('creates a goal with a holding set aside, shows its forecast, and saves both to the sheet', async () => {
     const user = userEvent.setup()
     const { env, token } = setup()
-    env.sheets.Holdings.grid.push(['h1', 'Flexi cap fund', 'Mutual fund', '', '', '', '', '', '', 10000, '', '', '', '', '', '', '', '', '', '2026-11-17T09:00:00.000Z', ''])
+    // A ₹10,000 fund with an ongoing ₹8,000 SIP (the Monthly column).
+    env.sheets.Holdings.grid.push(['h1', 'Flexi cap fund', 'Mutual fund', '', '', '', '', '', '', 10000, '', '', '', '', '', '', 8000, '', '', '2026-11-17T09:00:00.000Z', ''])
     await user.type(screen.getByLabelText('Web app URL'), URL)
     await user.type(screen.getByLabelText('Secret code'), token)
     await user.click(screen.getByRole('button', { name: 'Connect' }))
@@ -190,10 +191,18 @@ describe('app and sheet round trip', () => {
     await user.type(screen.getByLabelText('Cost today (₹)'), '25,00,000')
     await user.clear(screen.getByLabelText('Target year'))
     await user.type(screen.getByLabelText('Target year'), '2036')
-    await user.type(screen.getByLabelText('Monthly SIP planned (₹)'), '6000')
+    expect(screen.getByText(/SIP ₹8,000\/month/)).toBeInTheDocument()
     await user.type(screen.getByLabelText('Share of Flexi cap fund for this goal, percent'), '50')
+    await user.type(screen.getByLabelText("Other monthly SIP for this goal (₹, on top of the holdings' SIPs above)"), '2000')
+    expect((screen.getByLabelText('Yearly top-up of the SIPs (%)') as HTMLInputElement).value).toBe('10')
     expect(await screen.findByText(/Chance of reaching it: \d+%/)).toBeInTheDocument()
     expect(screen.getByText('₹5,000')).toBeInTheDocument() // half of the ₹10,000 fund
+    // Half the fund's ₹8,000 SIP plus ₹2,000 of its own.
+    expect(screen.getByText('₹6,000')).toBeInTheDocument()
+    expect(screen.getByText(/₹4,000 from holdings \+ ₹2,000 other, rising 10% a year/)).toBeInTheDocument()
+    await user.clear(screen.getByLabelText('Yearly top-up of the SIPs (%)'))
+    await user.type(screen.getByLabelText('Yearly top-up of the SIPs (%)'), '5')
+    expect(screen.getByText(/rising 5% a year/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     expect(await screen.findByText('College')).toBeInTheDocument()
@@ -201,8 +210,11 @@ describe('app and sheet round trip', () => {
     await waitFor(() => {
       const row = env.tab('Goals')[1]
       expect(row?.slice(1, 4)).toEqual(['College', 2500000, 2036])
+      expect(row?.[6]).toBe(2000)
       expect(row?.[7]).toBe('h1:50')
+      expect(row?.[11]).toBe(5)
     })
+    expect(screen.getByText(/investing ₹6,000 \(\+5% a year\)/)).toBeInTheDocument()
   })
   it('a display name shows over the bank\'s name, and categories change for a whole sender or a picked set', async () => {
     const user = userEvent.setup()

@@ -13,7 +13,7 @@ export default function Goals() {
   const goals = (data?.goals ?? []).filter((g) => !g.deleted).sort((a, b) => a.targetYear - b.targetYear)
   const views = goals.map((g) => viewGoal(g, holdings, today))
   const onTrack = views.filter((v) => v.plan.onTrack).length
-  const gap = views.reduce((s, v) => s + Math.max(0, v.plan.sipNeededPaise - v.goal.sipPaise), 0)
+  const gap = views.reduce((s, v) => s + Math.max(0, v.plan.sipNeededPaise - v.totalSipPaise), 0)
   const over = overAllocated(goals)
   const name = (id: string) => holdings.find((h) => h.id === id)?.name ?? 'a removed holding'
 
@@ -60,7 +60,8 @@ export default function Goals() {
                   <span style={{ width: `${pct}%`, background: v.plan.onTrack ? 'var(--pos)' : 'var(--neg)' }} />
                 </div>
                 <span className="row-sub">
-                  Needs {formatRupees(v.plan.sipNeededPaise)}/month · planned {formatRupees(v.goal.sipPaise)} · {Math.round(v.forecast.chance * 100)}% chance
+                  Needs {formatRupees(v.plan.sipNeededPaise)}/month · investing {formatRupees(v.totalSipPaise)}
+                  {v.topUpPct > 0 ? ` (+${v.topUpPct}% a year)` : ''} · {Math.round(v.forecast.chance * 100)}% chance
                 </span>
               </Link>
             )

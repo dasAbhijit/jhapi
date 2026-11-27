@@ -15,3 +15,4 @@ export {
 export { HOLDING_TYPES } from '../core/holdings'
 export { parseAmfiNav, priceKey, priceUpdates } from '../core/prices'
 export { netWorthSnapshot } from '../core/networth'
+export { DEFAULT_TOP_UP_PCT } from '../core/goalPlan'

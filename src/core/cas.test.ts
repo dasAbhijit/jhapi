@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addUnits, decimalText, fundHolding, matchFunds, parseCas, shareHolding, soldOut } from './cas'
+import { addUnits, decimalText, fundHolding, lastSip, matchFunds, parseCas, shareHolding, soldOut } from './cas'
 import { blankHolding, valueHolding, type Holding } from './holdings'
 
 // The shape of a CAMS + KFintech detailed CAS, as pdf.js gives it line by line. Names and numbers are made up.
@@ -65,6 +65,19 @@ describe('CAS: detailed statement', () => {
     expect(f.navDate).toBe('2026-11-25')
     expect(f.costPaise).toBe(1_550_000)
     expect(f.valuePaise).toBe(1_642_647)
+    expect(f.sipPaise).toBe(500_000) // the 5 Nov instalment; the second folio has no SIP
+  })
+
+  it('finds the ongoing SIP, rounded to the rupee, and ignores old ones and transfers', () => {
+    const block = [
+      '05-Sep-2026 SIP Purchase-BSE - Instalment No 10 - 2,999.85 30.000 99.9950 120.000',
+      '05-Oct-2026 SIP Purchase-BSE - Instalment No 11 - 4,999.75 49.998 100.0000 169.998',
+      '10-Oct-2026 Systematic Transfer In 10,000.00 99.000 101.0000 268.998',
+      '12-Oct-2026 Systematic Withdrawal (1,000.00) (9.000) 111.0000 259.998',
+    ].join('\n')
+    expect(lastSip(block, '2026-11-10')).toBe(500_000)
+    expect(lastSip(block, '2027-01-25')).toBeNull() // last instalment more than 45 days before the statement
+    expect(lastSip('05-Nov-2026 Purchase 5,000.00 50.000 100.0000 150.000', '2026-11-25')).toBeNull() // a lump sum
   })
 
   it('joins a name the PDF wrapped, and marks a sold-out folio', () => {
@@ -109,13 +122,17 @@ describe('CAS: into holdings', () => {
 
   it('a new fund gets the ISIN, units, NAV, cost and folios, and is valued from them', () => {
     const h = fundHolding(s.funds[0], null, () => 'new1')
+    expect(h.monthlyPaise).toBe(500_000)
     expect(h).toMatchObject({ id: 'new1', type: 'mf', name: 'Example Flexi Cap Fund - Direct Plan - Growth', institution: 'Example Mutual Fund', code: 'INF000A01AB1', units: '160.5', pricePaise: 10235, priceDate: '2026-11-25', investedPaise: 1_550_000, notes: 'Folio 1234567/89, 7654321/00 · from CAS' })
     expect(valueHolding(h, '2026-11-26').valuePaise).toBe(1_642_718)
   })
 
   it('an existing fund keeps its name, notes and a newer price', () => {
-    const base = mine({ id: 'b', name: 'My flexi', code: '100001', notes: 'SIP 5k', units: '100', pricePaise: 10400, priceDate: '2026-11-26' })
+    const base = mine({ id: 'b', name: 'My flexi', code: '100001', notes: 'SIP 5k', units: '100', pricePaise: 10400, priceDate: '2026-11-26', monthlyPaise: 300_000 })
     const h = fundHolding(s.funds[0], base, () => 'unused')
+    expect(h.monthlyPaise).toBe(500_000) // the statement's SIP replaces the old figure
+    expect(fundHolding({ ...s.funds[0], sipPaise: null }, base, () => 'x').monthlyPaise).toBe(300_000)
+    expect(fundHolding(s.funds[1], { ...base, monthlyPaise: 300_000 }, () => 'x').monthlyPaise).toBeNull() // sold out
     expect(h).toMatchObject({ id: 'b', name: 'My flexi', notes: 'SIP 5k', code: 'INF000A01AB1', units: '160.5', pricePaise: 10400, priceDate: '2026-11-26', investedPaise: 1_550_000 })
   })
 

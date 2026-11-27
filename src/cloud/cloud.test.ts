@@ -345,14 +345,42 @@ describe('goals sync', () => {
   }
   it('push writes readable columns; hand-typed goals are read back', () => {
     const { env, token } = ready()
+    // A push without a top-up (an older copy of the app) gets the default 10%.
     const r = env.call({ token, action: 'push', goals: [g] })
-    expect(r.goals).toEqual([g])
+    expect(r.goals).toEqual([{ ...g, topUpPct: 10 }])
     expect(env.tab('Goals')[1].slice(1, 8)).toEqual(['College', 2500000, 2036, 6, '', 6000, 'h1:50'])
+    expect(env.tab('Goals')[1][11]).toBe(10)
     env.sheets.Goals.grid.push(['', 'Car', 800000, 2029, '', '', '', '', '', '', ''])
     env.sheets.Goals.grid.push(['', 'No year', 100, '', '', '', '', '', '', '', ''])
     const p = env.call({ token, action: 'pull' })
-    expect(p.goals[1]).toMatchObject({ name: 'Car', costTodayPaise: 80000000, targetYear: 2029, inflationPct: 6, sipPaise: 0 })
+    expect(p.goals[1]).toMatchObject({ name: 'Car', costTodayPaise: 80000000, targetYear: 2029, inflationPct: 6, sipPaise: 0, topUpPct: 10 })
     expect(p.problems).toEqual(['Goals row 4: missing or unreadable Target year'])
+
+    // No top-up is kept as 0; a top-up over 100% is refused.
+    expect(env.call({ token, action: 'push', goals: [{ ...g, topUpPct: 0, updatedAt: '2026-11-17T10:05:00.000Z' }] }).goals[0].topUpPct).toBe(0)
+    expect(env.call({ token, action: 'push', goals: [{ ...g, topUpPct: 150 }] }).error).toBe('Goal 1: bad top-up.')
+  })
+
+  it('a Goals tab from before the top-up column gains it, and its goals get 10%', () => {
+    const { env, token } = ready()
+    const grid = env.sheets.Goals.grid
+    grid.length = 0
+    grid.push(['ID', 'Name', 'Cost today', 'Target year', 'Inflation %', 'Return %', 'Monthly SIP', 'Holdings', 'Notes', 'Updated', 'Deleted'])
+    grid.push(['g0', 'Home', 5000000, 2032, 6, '', 20000, '', '', '2026-11-01T10:00:00.000Z', ''])
+    // Read before the column exists: the default.
+    const p = env.call({ token, action: 'pull' })
+    expect(p.goals[0]).toMatchObject({ id: 'g0', name: 'Home', sipPaise: 2000000, topUpPct: 10 })
+    // The next write (here the 10-minute inbox run) adds the column and keeps the row.
+    env.fn('readInbox')()
+    expect(env.tab('Goals')[0][11]).toBe('Top-up %')
+    expect(env.call({ token, action: 'pull' }).goals[0]).toMatchObject({ id: 'g0', topUpPct: 10 })
+  })
+
+  it('still refuses a Goals tab whose columns were changed by hand', () => {
+    const { env } = ready()
+    env.sheets.Goals.grid[0][2] = 'Price'
+    env.sheets.Goals.grid.push(['g0', 'Home', 5000000, 2032])
+    expect(() => env.fn('readInbox')()).toThrow(/Goals tab has different columns/)
   })
   it('refuses a share over 100% or an id that would break the Holdings cell', () => {
     const { env, token } = ready()

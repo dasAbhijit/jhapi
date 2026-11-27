@@ -186,12 +186,24 @@ describe('goals', () => {
     expect(sipFutureValue(sip - 10_000, 12, 60)).toBeLessThan(target)
   })
 
+  it('a yearly top-up raises the SIP every 12 months', () => {
+    // ₹1,000 a month for a year, then ₹1,100: with no return, 12,000 + 13,200.
+    expect(sipFutureValue(R(1000), 0, 24, 10)).toBe(R(25200))
+    expect(sipFutureValue(R(1000), 12, 60, 0)).toBe(sipFutureValue(R(1000), 12, 60))
+    // With a 10% top-up the starting SIP needed is lower, and it is still the smallest ₹100 step that reaches the target.
+    const flat = sipNeeded(L(25), 11, 120)
+    const up = sipNeeded(L(25), 11, 120, 10)
+    expect(up).toBeLessThan(flat)
+    expect(sipFutureValue(up, 11, 120, 10)).toBeGreaterThanOrEqual(L(25))
+    expect(sipFutureValue(up - 10_000, 11, 120, 10)).toBeLessThan(L(25))
+  })
+
   it('plans a goal and reports on track or behind', () => {
-    const behind = planGoal({ costTodayPaise: L(25), inflationPct: 6, years: 10, fundedTodayPaise: L(5), expectedReturnPct: 11, plannedSipPaise: R(6000) })
+    const behind = planGoal({ costTodayPaise: L(25), inflationPct: 6, years: 10, fundedTodayPaise: L(5), expectedReturnPct: 11, plannedSipPaise: R(6000), topUpPct: 0 })
     expect(behind.fundedPct).toBe(20)
     expect(behind.onTrack).toBe(false)
     expect(behind.sipNeededPaise).toBeGreaterThan(R(6000))
-    const ok = planGoal({ costTodayPaise: L(25), inflationPct: 6, years: 10, fundedTodayPaise: L(5), expectedReturnPct: 11, plannedSipPaise: behind.sipNeededPaise })
+    const ok = planGoal({ costTodayPaise: L(25), inflationPct: 6, years: 10, fundedTodayPaise: L(5), expectedReturnPct: 11, plannedSipPaise: behind.sipNeededPaise, topUpPct: 0 })
     expect(ok.onTrack).toBe(true)
     expect(ok.gapPaise).toBe(0)
   })

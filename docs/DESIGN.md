@@ -2,7 +2,7 @@
 
 A personal finance tracker for Indian money: bank and card transactions read automatically from bank alert emails, plus every kind of asset and loan (EPF, PPF, NPS, mutual funds, stocks, FDs, gold, property, home loan), goals with forecasts, a chat to ask about your money, and an AI outlook. Amounts are in rupees (₹). See [Requirements](REQUIREMENTS.md) for what it must do and how each item will be checked.
 
-**Status:** M0, M1, M4a–d, M5a–b, M6, M8a (passkey lock) and M8b (CAS import) are built and tested; the app is live at https://dasabhijit.github.io/jhapi/. M5c, M7 and the rest of M8 (CSV export, guide) are next. See section 10.
+**Status:** M0, M1, M4a–d, M5a–b, M6, M8a (passkey lock) and M8b (CAS import) are built and tested (M6b: goal SIPs from holdings and yearly top-up); the app is live at https://dasabhijit.github.io/jhapi/. M5c, M7 and the rest of M8 (CSV export, guide) are next. See section 10.
 
 Jhapi (ঝাঁপি) is short for *Lokkhir Jhapi*, the small pot of savings kept in many Bengali homes.
 
@@ -155,12 +155,13 @@ Amounts are **rupees** in the sheet and integer **paise** in the app. Dates are 
 
 **Prices (auto):** a helper tab of `GOOGLEFINANCE` formulas the script rewrites each morning; not synced.
 
-**Goals:** `ID`, `Name`, `Cost today`, `Target year`, `Inflation %`, `Return %`, `Monthly SIP`, `Holdings`, `Notes`, `Updated`, `Deleted`. `Holdings` lists the holdings set aside for the goal as `holdingID:percent; …` (the app writes it; by hand, copy IDs from the Holdings tab). `Return %` empty means "use the usual return of the tagged holdings' classes".
+**Goals:** `ID`, `Name`, `Cost today`, `Target year`, `Inflation %`, `Return %`, `Monthly SIP`, `Holdings`, `Notes`, `Updated`, `Deleted`, `Top-up %`. `Monthly SIP` is the goal's own SIP, on top of the tagged holdings' SIPs. `Top-up %` is the yearly rise of all the goal's SIPs; empty means 10%. It came later, so it is the last column: a sheet from before gains it on the next write (the script accepts a tab whose columns are the older ones plus new ones at the end), and its goals read as 10%. `Holdings` lists the holdings set aside for the goal as `holdingID:percent; …` (the app writes it; by hand, copy IDs from the Holdings tab). `Return %` empty means "use the usual return of the tagged holdings' classes".
 
 - **Worked out in the app** (`src/core/goalPlan.ts`):
   - Set aside today = each tagged holding's value × its share.
+  - SIP now = each tagged holding's ongoing monthly SIP or contribution (`Monthly` on the holding) × its share, plus the goal's own SIP. It rises by the goal's top-up % every 12 months.
   - Future cost = cost today × (1 + inflation)^years.
-  - SIP needed comes from M1's `planGoal`.
+  - SIP needed comes from M1's `planGoal`: the starting monthly amount which, topped up yearly, reaches the cost. Compare it with SIP now.
   - The **forecast** (`src/core/forecast.ts`) runs 1,000 simulated futures. Each month's return is drawn from the expected return and volatility. The volatility is weighted by the tagged holdings' classes: equity 15%, retirement 6%, deposits 1%, gold and property 12%. The results are shown in today's rupees, with the 10th–90th percentile band, the median, and the chance of reaching the cost.
   - A fixed random seed makes the picture the same on every device.
 - A holding set aside more than 100% across goals is flagged.
@@ -182,9 +183,10 @@ Pure functions with no UI or network code, covered by unit and randomized tests,
    - **Row statements (CAMS summary, NSDL/CDSL):** a line with one ISIN and numbers is taken only if three of its numbers, in order, agree as units × price ≈ value (within 0.5% or ₹1), so a row read the wrong way is dropped, not imported wrong. Rows that cannot be read are listed by name.
    - **Funds** (ISIN `INF…`): folios of the same scheme are added into one holding. A fund updates the mutual fund with the same ISIN, else the one with the same name; the owner can change each choice, add it as new or skip it. Units, cost and ISIN come from the statement; the owner's name and notes are kept, and so is a newer price. Sold-out funds are skipped unless they match a holding (which then goes to 0 units).
    - **Shares and bonds** (other ISINs) are imported as stocks when the owner types the NSE symbol, since GOOGLEFINANCE does not take ISINs.
+   - **Ongoing SIP:** in a detailed CAS, the last SIP instalment of each folio (a "Systematic"/"SIP" purchase, not a transfer, withdrawal or reversal), if it is within 45 days of the statement's end, becomes the fund's monthly SIP, rounded to the rupee (stamp duty makes it a little short). Goals count it (section 6).
    - **After the import:** values follow AMFI's NAV every morning. Units change only with a newer CAS (or by hand), so new SIP instalments show up at the next import.
 6. **Net worth:** sum by class, liabilities negative. A snapshot is saved once a day when the app opens, and the Dashboard time ranges (1D … All, YTD, FY) read from snapshots.
-7. **Goals** (`goals.ts`): future cost = today's cost × (1 + inflation)^years. Money already set aside grows at the expected return. SIP needed assumes the SIP is invested at the start of each month, at the monthly rate equal to the yearly return ((1+R)^(1/12) − 1), and is rounded up to the next ₹100. A holding can be split across goals by percentage; the parts must add up to 100% or less.
+7. **Goals** (`goals.ts`): future cost = today's cost × (1 + inflation)^years. Money already set aside grows at the expected return. SIP needed assumes the SIP is invested at the start of each month, at the monthly rate equal to the yearly return ((1+R)^(1/12) − 1), and is rounded up to the next ₹100. With a yearly top-up s, month m (from 1) invests P × (1 + s)^⌊(m − 1)/12⌋ and the sum is added up month by month; the forecast tops up the same way. A holding can be split across goals by percentage; the parts must add up to 100% or less.
 8. **Forecast:** 1,000 runs of monthly returns per asset class (normal distribution from expected return and volatility), run in a Web Worker. Shows the median and the 10th to 90th percentile in today's rupees, and the chance of reaching the target. Fixed-rate assets and loans are calculated, not simulated.
 9. **Transactions:** transfer pairing, duplicate flagging, category rules, monthly spending totals.
 
@@ -210,7 +212,7 @@ A chat tab, in the style of the owner's other apps' chat: a status line, suggest
 | `recurring_payments` | Payees paid on a regular cycle (subscriptions, rent, SIPs) with amount and cycle |
 | `holdings_summary` | Value per class and per holding (name and type), with how the value was found |
 | `loans_summary` | Outstanding, EMI, rate, months left per loan |
-| `goals_summary` | Each goal's status, funded %, SIP needed vs planned, chance |
+| `goals_summary` | Each goal's status, funded %, SIP needed vs SIP now (with top-up), chance |
 | `today` | Today's date, the financial year, when data was last synced and last read from email |
 
 - **Every number comes from a lookup.** The system prompt tells Gemini not to work out totals itself and to say when the data does not cover the question (for example, before the first email was read). Rupee amounts are sent as rupees, not paise.
@@ -250,8 +252,8 @@ Built for **iPhone and iPad in Safari**. Phone layout uses the 390px design widt
 | Settings ✅ | Connect the sheet (web app URL and secret code), last sync and last email run, rows the sheet could not read, Sync now, Read bank emails now, category rules, **display names** (each with Remove), Disconnect this device |
 | Portfolio ✅ | Net worth from holdings, then each class (Retirement, Market, Deposits, Gold & other, Liabilities) with its total; each holding shows how its value was found (CALC, PRICE, EMI, MANUAL) and what is missing; Update prices now |
 | Add / edit holding ✅ | Type picker grouped by class, then only the fields that type needs, with a live "value today" preview |
-| Goals ✅ | On track / behind counts and monthly SIP gap; a card per goal with cost today and in the target year, funded %, SIP needed vs planned, chance of reaching it; a warning when a holding is set aside more than 100% |
-| Goal detail ✅ | Name, cost, year, inflation, SIP, optional return; a share box for each holding; live cost in target year, set aside today, SIP needed, forecast band and chance |
+| Goals ✅ | On track / behind counts and monthly SIP gap; a card per goal with cost today and in the target year, funded %, SIP needed vs SIP now (and its top-up), chance of reaching it; a warning when a holding is set aside more than 100% |
+| Goal detail ✅ | Name, cost, year, inflation, optional return; a share box for each holding, showing its SIP; the goal's other SIP; yearly top-up (10% by default); live cost in target year, set aside today, SIP now (from holdings + other, and what it reaches by the last year), SIP needed to start, forecast band and chance |
 | EPF, Loan, other holding detail (M5c) | Balance, breakdown, rates by year, events (prepayments, rate changes), the matching actions |
 | CAS import ✅ | Choose the PDF and type its password; then each fund with units, NAV and cost, and a choice (add as new, update a holding, skip); shares with an NSE symbol box; what could not be read; Import |
 | Ask (M7) | Chat about spending, payees, subscriptions, holdings, loans and goals, with a one-time "what Gemini sees" card, chips, streamed answers, "What Gemini saw" under each answer, links into Transactions, and suggested-change cards with Apply |
@@ -274,6 +276,7 @@ Re-planned on 17 Nov 2026 when the owner chose the Google Sheet as the store.
 | M5a ✅ | Holdings tab synced both ways; Portfolio and add/edit screens; values from the M1 calculators; net worth on Home (holdings + bank balances from emails − loans) | Round trip: a PPF added in the app shows the right value and lands in the sheet |
 | M5b ✅ | Prices every morning (AMFI NAVs by scheme code or ISIN; GOOGLEFINANCE by symbol, through a helper tab), daily net worth snapshots, Home chart with 1M/3M/6M/1Y/FY/All, Update prices now | Script tests on fake Google (AMFI file, GOOGLEFINANCE, AMFI down, same-day rerun) |
 | M5c | EPF/PPF/SSY declared rates by year; loan rate changes and prepayments entered in the app | Owner's EPF and loan match their statements |
+| M6b ✅ | Ongoing SIP on funds, stocks, ETFs and NPS (filled in by the CAS import from a SIP in the last 45 days); goals count tagged holdings' SIPs by share; yearly top-up % per goal (default 10%, older goals too) in SIP needed and the forecast | Tests: step-up sums by hand, tagged SIP shares, default for older goals, the Goals tab gaining the column, round trip with a 5% top-up |
 | M6 ✅ | Goals tab synced both ways; Goals and goal detail screens; holdings set aside by share; SIP needed; 1,000-run forecast band and chance; over-100% warning; goals on Home | Round trip: a goal with a 50% share of a fund lands in the sheet and shows BEHIND with its chance |
 | M7 | Gemini key in Settings; **Ask** (chat with lookups, "What Gemini saw", suggested changes); AI Outlook; Gemini fallback for unparsed emails | Tests with a fake Gemini pass (section 8.1); Ask answers "food this month vs last" correctly with a real key on the owner's iPhone |
 | M8a ✅ | Passkey lock: data on the device encrypted with a key from the passkey's PRF; lock screen; auto-lock; turn off; forget this device | Tests: nothing readable left in storage once on; lock, unlock, wrong passkey, 5-minute auto-lock, turn off, forget. Live check on the owner's iPhone and iPad |

@@ -97,8 +97,16 @@ function ensureTabs_() {
     if (sheet.getMaxColumns() < width) sheet.insertColumnsAfter(sheet.getMaxColumns(), width - sheet.getMaxColumns());
     var current = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, width).getValues()[0] : [];
     var missing = tab.headers.some(function (h, i) { return current[i] !== h; });
+    // New columns are only ever added at the end; a tab that has the older columns just gains them.
+    var olderLayout = true;
+    var blank = false;
+    tab.headers.forEach(function (h, i) {
+      var c = current[i] === undefined || current[i] === null ? '' : current[i];
+      if (c === '') blank = true;
+      else if (c !== h || blank) olderLayout = false;
+    });
     if (missing) {
-      if (sheet.getLastRow() > 1 && current.join('') !== '') {
+      if (sheet.getLastRow() > 1 && current.join('') !== '' && !olderLayout) {
         throw new Error('The ' + tab.name + ' tab has different columns. Rename it and run Set up again.');
       }
       sheet.getRange(1, 1, 1, width).setValues([tab.headers.slice()]);
@@ -395,6 +403,7 @@ function validatePush_(body) {
     if (typeof g.targetYear !== 'number' || g.targetYear < 2000 || g.targetYear > 2200) throw new Error(where + 'bad target year.');
     if (typeof g.inflationPct !== 'number' || !isFinite(g.inflationPct) || (g.returnPct !== null && (typeof g.returnPct !== 'number' || !isFinite(g.returnPct)))) throw new Error(where + 'bad rate.');
     if (typeof g.sipPaise !== 'number' || g.sipPaise < 0 || !Array.isArray(g.tags) || g.tags.length > 100) throw new Error(where + 'bad SIP or holdings.');
+    if (g.topUpPct !== undefined && (typeof g.topUpPct !== 'number' || !(g.topUpPct >= 0) || g.topUpPct > 100)) throw new Error(where + 'bad top-up.');
     g.tags.forEach(function (tag) {
       if (!tag || typeof tag.holdingId !== 'string' || /[:;]/.test(tag.holdingId) || typeof tag.pct !== 'number' || !(tag.pct > 0) || tag.pct > 100) throw new Error(where + 'bad holding share.');
     });
@@ -502,7 +511,7 @@ function push_(body) {
   var cleanGoals = (body.goals || []).map(function (g) {
     return {
       id: g.id, name: g.name, costTodayPaise: g.costTodayPaise, targetYear: g.targetYear, inflationPct: g.inflationPct, returnPct: g.returnPct,
-      sipPaise: g.sipPaise, tags: g.tags.map(function (x) { return { holdingId: x.holdingId, pct: x.pct }; }), notes: g.notes, updatedAt: g.updatedAt, deleted: g.deleted,
+      sipPaise: g.sipPaise, topUpPct: g.topUpPct === undefined ? J.DEFAULT_TOP_UP_PCT : g.topUpPct, tags: g.tags.map(function (x) { return { holdingId: x.holdingId, pct: x.pct }; }), notes: g.notes, updatedAt: g.updatedAt, deleted: g.deleted,
     };
   });
   changed += mergeTable_(J.GOALS_TAB, loadGoals_(), cleanGoals, J.goalToRow, rejected);

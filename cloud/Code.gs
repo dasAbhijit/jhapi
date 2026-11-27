@@ -24,6 +24,7 @@ var JhapiCore = (() => {
   // src/cloud/entry.ts
   var entry_exports = {};
   __export(entry_exports, {
+    DEFAULT_TOP_UP_PCT: () => DEFAULT_TOP_UP_PCT,
     GOALS_TAB: () => GOALS_TAB,
     GOAL_HEADERS: () => GOAL_HEADERS,
     HOLDINGS_TAB: () => HOLDINGS_TAB,
@@ -1146,11 +1147,11 @@ var JhapiCore = (() => {
   var HOLDING_TYPES = {
     epf: { label: "EPF / VPF", cls: "retirement", method: "calc", fields: ["institution", "investedPaise", "startDate", "ratePct", "monthlyPaise"] },
     ppf: { label: "PPF", cls: "retirement", method: "calc", fields: ["institution", "investedPaise", "startDate", "ratePct", "monthlyPaise", "maturityDate"] },
-    nps: { label: "NPS", cls: "retirement", method: "price", fields: ["institution", "units", "pricePaise", "valuePaise", "investedPaise"] },
+    nps: { label: "NPS", cls: "retirement", method: "price", fields: ["institution", "units", "pricePaise", "valuePaise", "investedPaise", "monthlyPaise"] },
     ssy: { label: "Sukanya Samriddhi", cls: "retirement", method: "calc", fields: ["institution", "investedPaise", "startDate", "ratePct", "monthlyPaise", "maturityDate"] },
-    mf: { label: "Mutual fund", cls: "market", method: "price", fields: ["institution", "code", "units", "pricePaise", "investedPaise"] },
-    stock: { label: "Stock", cls: "market", method: "price", fields: ["institution", "code", "units", "pricePaise", "investedPaise"] },
-    etf: { label: "ETF", cls: "market", method: "price", fields: ["institution", "code", "units", "pricePaise", "investedPaise"] },
+    mf: { label: "Mutual fund", cls: "market", method: "price", fields: ["institution", "code", "units", "pricePaise", "investedPaise", "monthlyPaise"] },
+    stock: { label: "Stock", cls: "market", method: "price", fields: ["institution", "code", "units", "pricePaise", "investedPaise", "monthlyPaise"] },
+    etf: { label: "ETF", cls: "market", method: "price", fields: ["institution", "code", "units", "pricePaise", "investedPaise", "monthlyPaise"] },
     sgb: { label: "Sovereign Gold Bond", cls: "market", method: "price", fields: ["code", "units", "pricePaise", "investedPaise", "maturityDate"] },
     fd: { label: "Fixed deposit", cls: "deposits", method: "calc", compounding: "quarterly", fields: ["institution", "investedPaise", "ratePct", "startDate", "maturityDate", "compounding", "payout"] },
     rd: { label: "Recurring deposit", cls: "deposits", method: "calc", compounding: "quarterly", fields: ["institution", "monthlyPaise", "ratePct", "startDate", "tenureMonths"] },
@@ -1263,6 +1264,7 @@ var JhapiCore = (() => {
   }
 
   // src/core/goalPlan.ts
+  var DEFAULT_TOP_UP_PCT = 10;
   function readTags(s) {
     return s.split(/[;\n]/).map((p) => p.trim()).filter(Boolean).map((p) => {
       const i = p.lastIndexOf(":");
@@ -1569,11 +1571,14 @@ var JhapiCore = (() => {
     };
   }
   var GOALS_TAB = "Goals";
-  var GOAL_HEADERS = ["ID", "Name", "Cost today", "Target year", "Inflation %", "Return %", "Monthly SIP", "Holdings", "Notes", "Updated", "Deleted"];
+  var GOAL_HEADERS = ["ID", "Name", "Cost today", "Target year", "Inflation %", "Return %", "Monthly SIP", "Holdings", "Notes", "Updated", "Deleted", "Top-up %"];
   TEXT_COLUMNS[GOALS_TAB] = ["ID", "Holdings", "Updated"];
+  function clampTopUp(n) {
+    return n === null || !(n >= 0) ? DEFAULT_TOP_UP_PCT : Math.min(n, 100);
+  }
   function goalToRow(g) {
     var _a;
-    return [g.id, g.name, rupees(g.costTodayPaise), g.targetYear, g.inflationPct, (_a = g.returnPct) != null ? _a : "", rupees(g.sipPaise), writeTags(g.tags), g.notes, g.updatedAt, g.deleted ? "TRUE" : ""];
+    return [g.id, g.name, rupees(g.costTodayPaise), g.targetYear, g.inflationPct, (_a = g.returnPct) != null ? _a : "", rupees(g.sipPaise), writeTags(g.tags), g.notes, g.updatedAt, g.deleted ? "TRUE" : "", g.topUpPct];
   }
   function rowToGoal(row, headers) {
     var _a, _b;
@@ -1592,6 +1597,7 @@ var JhapiCore = (() => {
         inflationPct: (_a = num(get("Inflation %"))) != null ? _a : 6,
         returnPct: num(get("Return %")),
         sipPaise: (_b = paiseFrom(get("Monthly SIP"))) != null ? _b : 0,
+        topUpPct: clampTopUp(num(get("Top-up %"))),
         tags: readTags(str(get("Holdings"))),
         notes: str(get("Notes")),
         updatedAt: str(get("Updated")),
@@ -1787,8 +1793,16 @@ function ensureTabs_() {
     if (sheet.getMaxColumns() < width) sheet.insertColumnsAfter(sheet.getMaxColumns(), width - sheet.getMaxColumns());
     var current = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, width).getValues()[0] : [];
     var missing = tab.headers.some(function (h, i) { return current[i] !== h; });
+    // New columns are only ever added at the end; a tab that has the older columns just gains them.
+    var olderLayout = true;
+    var blank = false;
+    tab.headers.forEach(function (h, i) {
+      var c = current[i] === undefined || current[i] === null ? '' : current[i];
+      if (c === '') blank = true;
+      else if (c !== h || blank) olderLayout = false;
+    });
     if (missing) {
-      if (sheet.getLastRow() > 1 && current.join('') !== '') {
+      if (sheet.getLastRow() > 1 && current.join('') !== '' && !olderLayout) {
         throw new Error('The ' + tab.name + ' tab has different columns. Rename it and run Set up again.');
       }
       sheet.getRange(1, 1, 1, width).setValues([tab.headers.slice()]);
@@ -2085,6 +2099,7 @@ function validatePush_(body) {
     if (typeof g.targetYear !== 'number' || g.targetYear < 2000 || g.targetYear > 2200) throw new Error(where + 'bad target year.');
     if (typeof g.inflationPct !== 'number' || !isFinite(g.inflationPct) || (g.returnPct !== null && (typeof g.returnPct !== 'number' || !isFinite(g.returnPct)))) throw new Error(where + 'bad rate.');
     if (typeof g.sipPaise !== 'number' || g.sipPaise < 0 || !Array.isArray(g.tags) || g.tags.length > 100) throw new Error(where + 'bad SIP or holdings.');
+    if (g.topUpPct !== undefined && (typeof g.topUpPct !== 'number' || !(g.topUpPct >= 0) || g.topUpPct > 100)) throw new Error(where + 'bad top-up.');
     g.tags.forEach(function (tag) {
       if (!tag || typeof tag.holdingId !== 'string' || /[:;]/.test(tag.holdingId) || typeof tag.pct !== 'number' || !(tag.pct > 0) || tag.pct > 100) throw new Error(where + 'bad holding share.');
     });
@@ -2192,7 +2207,7 @@ function push_(body) {
   var cleanGoals = (body.goals || []).map(function (g) {
     return {
       id: g.id, name: g.name, costTodayPaise: g.costTodayPaise, targetYear: g.targetYear, inflationPct: g.inflationPct, returnPct: g.returnPct,
-      sipPaise: g.sipPaise, tags: g.tags.map(function (x) { return { holdingId: x.holdingId, pct: x.pct }; }), notes: g.notes, updatedAt: g.updatedAt, deleted: g.deleted,
+      sipPaise: g.sipPaise, topUpPct: g.topUpPct === undefined ? J.DEFAULT_TOP_UP_PCT : g.topUpPct, tags: g.tags.map(function (x) { return { holdingId: x.holdingId, pct: x.pct }; }), notes: g.notes, updatedAt: g.updatedAt, deleted: g.deleted,
     };
   });
   changed += mergeTable_(J.GOALS_TAB, loadGoals_(), cleanGoals, J.goalToRow, rejected);

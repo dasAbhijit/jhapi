@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { viewGoal, type Goal, type GoalTag } from '../core/goalPlan'
+import { DEFAULT_TOP_UP_PCT, viewGoal, type Goal, type GoalTag } from '../core/goalPlan'
+import { sipInMonth } from '../core/goals'
 import { HOLDING_TYPES, valueHolding } from '../core/holdings'
 import { formatRupees, formatShort, parseINR } from '../core/money'
 import { useStore } from '../data/storeContext'
@@ -33,10 +34,11 @@ export default function GoalEdit() {
   const { config, data, saveGoal } = useStore()
   const existing = id ? data?.goals.find((g) => g.id === id) : undefined
   const [g, setG] = useState<Goal>(
-    () => existing ?? { id: crypto.randomUUID(), name: '', costTodayPaise: 0, targetYear: new Date().getFullYear() + 10, inflationPct: 6, returnPct: null, sipPaise: 0, tags: [], notes: '', updatedAt: '', deleted: false },
+    () => existing ?? { id: crypto.randomUUID(), name: '', costTodayPaise: 0, targetYear: new Date().getFullYear() + 10, inflationPct: 6, returnPct: null, sipPaise: 0, topUpPct: DEFAULT_TOP_UP_PCT, tags: [], notes: '', updatedAt: '', deleted: false },
   )
   const [cost, setCost] = useState(existing ? String(existing.costTodayPaise / 100) : '')
-  const [sip, setSip] = useState(existing ? String(existing.sipPaise / 100) : '')
+  const [sip, setSip] = useState(existing && existing.sipPaise ? String(existing.sipPaise / 100) : '')
+  const [topUp, setTopUp] = useState(String(existing?.topUpPct ?? DEFAULT_TOP_UP_PCT))
   const [err, setErr] = useState<string | null>(null)
   if (!config) return <NotConnected />
   if (id && !existing) return <p className="card muted">This goal is not in your sheet any more.</p>
@@ -45,7 +47,9 @@ export default function GoalEdit() {
   const holdings = (data?.holdings ?? []).filter((h) => !h.deleted && HOLDING_TYPES[h.type].cls !== 'liabilities')
   const costPaise = parseINR(cost) ?? 0
   const sipPaise = sip.trim() ? parseINR(sip) : 0
-  const draft: Goal = { ...g, costTodayPaise: costPaise, sipPaise: sipPaise ?? 0 }
+  const topUpPct = topUp.trim() === '' ? 0 : Number(topUp)
+  const topUpOk = Number.isFinite(topUpPct) && topUpPct >= 0 && topUpPct <= 100
+  const draft: Goal = { ...g, costTodayPaise: costPaise, sipPaise: sipPaise ?? 0, topUpPct: topUpOk ? topUpPct : 0 }
   const yearOk = g.targetYear >= Number(today.slice(0, 4)) && g.targetYear <= 2200
   const v = costPaise > 0 && yearOk ? viewGoal(draft, data?.holdings ?? [], today) : null
   const tagOf = (hid: string) => g.tags.find((t) => t.holdingId === hid)
@@ -56,7 +60,8 @@ export default function GoalEdit() {
     e.preventDefault()
     if (!g.name.trim()) return setErr('Give the goal a name.')
     if (!(costPaise > 0)) return setErr('Enter what the goal costs today, like 25,00,000.')
-    if (sipPaise === null) return setErr('Monthly SIP: enter an amount, or leave it empty.')
+    if (sipPaise === null) return setErr('Other monthly SIP: enter an amount, or leave it empty.')
+    if (!topUpOk) return setErr('Yearly top-up: enter a percent from 0 to 100.')
     if (!(g.targetYear >= new Date().getFullYear())) return setErr('The target year should be this year or later.')
     saveGoal({ ...draft, name: g.name.trim() })
     nav('/goals')
@@ -72,7 +77,6 @@ export default function GoalEdit() {
       <label className="field"><span>Cost today (₹)</span><input className="input" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} /></label>
       <label className="field"><span>Target year</span><input className="input" inputMode="numeric" value={String(g.targetYear)} onChange={(e) => setG({ ...g, targetYear: Number(e.target.value.replace(/\D/g, '')) || 0 })} /></label>
       <label className="field"><span>Inflation (% a year)</span><input className="input" inputMode="decimal" value={String(g.inflationPct)} onChange={(e) => setG({ ...g, inflationPct: Number(e.target.value) || 0 })} /></label>
-      <label className="field"><span>Monthly SIP planned (₹)</span><input className="input" inputMode="decimal" value={sip} onChange={(e) => setSip(e.target.value)} /></label>
       <label className="field">
         <span>Expected return (% a year, leave empty to use the holdings' usual returns)</span>
         <input className="input" inputMode="decimal" value={g.returnPct ?? ''} onChange={(e) => setG({ ...g, returnPct: e.target.value.trim() === '' ? null : Number(e.target.value) })} />
@@ -80,6 +84,7 @@ export default function GoalEdit() {
 
       <section className="card flush">
         <div className="card-head"><h2>Set aside for this goal</h2></div>
+        <p className="muted small pad">A share of a holding brings the same share of its ongoing SIP. Set a fund's SIP on the fund (Invest), or import a CAS.</p>
         {holdings.length === 0 ? (
           <p className="muted pad">Add holdings in Invest first, then set a share of each aside here.</p>
         ) : (
@@ -87,7 +92,10 @@ export default function GoalEdit() {
             <div key={h.id} className="row">
               <span className="row-main">
                 <span className="row-title">{h.name}</span>
-                <span className="row-sub">{formatRupees(valueHolding(h, today).valuePaise)}</span>
+                <span className="row-sub">
+                  {formatRupees(valueHolding(h, today).valuePaise)}
+                  {h.monthlyPaise ? ` · SIP ${formatRupees(h.monthlyPaise)}/month` : ''}
+                </span>
               </span>
               <span className="pct">
                 <input className="input" aria-label={`Share of ${h.name} for this goal, percent`} inputMode="numeric" value={tagOf(h.id)?.pct ?? ''} placeholder="0" onChange={(e) => setTag(h.id, Math.min(100, Number(e.target.value.replace(/\D/g, '')) || 0))} />
@@ -98,11 +106,33 @@ export default function GoalEdit() {
         )}
       </section>
 
+      <label className="field">
+        <span>Other monthly SIP for this goal (₹, on top of the holdings' SIPs above)</span>
+        <input className="input" inputMode="decimal" value={sip} placeholder="0" onChange={(e) => setSip(e.target.value)} />
+      </label>
+      <label className="field">
+        <span>Yearly top-up of the SIPs (%)</span>
+        <input className="input" inputMode="decimal" value={topUp} onChange={(e) => setTopUp(e.target.value)} />
+      </label>
+
       {v && (
         <section className="card stack" aria-live="polite">
           <div className="kv"><span>Cost in {g.targetYear}</span><strong>{formatRupees(v.plan.futureCostPaise)}</strong></div>
           <div className="kv"><span>Set aside today</span><strong>{formatRupees(v.fundedTodayPaise)}</strong></div>
-          <div className="kv"><span>Monthly SIP needed</span><strong>{formatRupees(v.plan.sipNeededPaise)}</strong></div>
+          <div className="kv">
+            <span>Monthly SIP now</span>
+            <strong>{formatRupees(v.totalSipPaise)}</strong>
+          </div>
+          {v.totalSipPaise > 0 && (
+            <span className="row-sub">
+              {formatRupees(v.ongoingSipPaise)} from holdings + {formatRupees(v.totalSipPaise - v.ongoingSipPaise)} other
+              {v.topUpPct > 0 ? `, rising ${v.topUpPct}% a year to ${formatRupees(Math.round(sipInMonth(v.totalSipPaise, v.topUpPct, v.months) / 100) * 100)} by the last year` : ''}
+            </span>
+          )}
+          <div className="kv">
+            <span>Monthly SIP needed{v.topUpPct > 0 ? ` (to start, +${v.topUpPct}% a year)` : ''}</span>
+            <strong>{formatRupees(v.plan.sipNeededPaise)}</strong>
+          </div>
           <ForecastBand points={v.forecast.points} target={g.costTodayPaise || costPaise} years={Math.round(v.months / 12)} />
           <p className={v.forecast.chance >= 0.7 ? 'banner ok-banner' : 'banner warn'}>
             Chance of reaching it: {Math.round(v.forecast.chance * 100)}%. Expected return {v.returnPct}% a year, ups and downs about {v.volatilityPct}%.
