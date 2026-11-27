@@ -28,6 +28,8 @@ export interface Store {
   /** Save several holdings in one go (CAS import). */
   saveHoldings(hs: Holding[]): void
   saveGoal(g: Goal): void
+  /** Save several goals in one go (the funds-and-goals screen). */
+  saveGoals(gs: Goal[]): void
   /** Save a category rule; with `apply`, also recategorise other transactions from the same payee. */
   saveRule(r: Rule, apply?: boolean): void
   resolveReview(id: string, resolved: boolean): void

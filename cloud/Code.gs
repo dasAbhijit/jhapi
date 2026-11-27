@@ -25,6 +25,9 @@ var JhapiCore = (() => {
   var entry_exports = {};
   __export(entry_exports, {
     DEFAULT_TOP_UP_PCT: () => DEFAULT_TOP_UP_PCT,
+    FUND_BUYS_TAB: () => FUND_BUYS_TAB,
+    FUND_BUY_HEADERS: () => FUND_BUY_HEADERS,
+    FUND_SENDERS: () => FUND_SENDERS,
     GOALS_TAB: () => GOALS_TAB,
     GOAL_HEADERS: () => GOAL_HEADERS,
     HOLDINGS_TAB: () => HOLDINGS_TAB,
@@ -47,9 +50,12 @@ var JhapiCore = (() => {
     TXN_TAB: () => TXN_TAB,
     accountLabel: () => accountLabel,
     aliasToRow: () => aliasToRow,
+    applyBuys: () => applyBuys,
     checkSender: () => checkSender,
     enrichFromReceipts: () => enrichFromReceipts,
+    findFundSender: () => findFundSender,
     findSender: () => findSender,
+    fundBuyToRow: () => fundBuyToRow,
     goalToRow: () => goalToRow,
     holdingToRow: () => holdingToRow,
     isDuplicate: () => isDuplicate,
@@ -58,10 +64,12 @@ var JhapiCore = (() => {
     pairTransfers: () => pairTransfers,
     parseAmfiNav: () => parseAmfiNav,
     parseEmail: () => parseEmail,
+    parseFundEmail: () => parseFundEmail,
     priceKey: () => priceKey,
     priceUpdates: () => priceUpdates,
     reviewToRow: () => reviewToRow,
     rowToAlias: () => rowToAlias,
+    rowToFundBuy: () => rowToFundBuy,
     rowToGoal: () => rowToGoal,
     rowToHolding: () => rowToHolding,
     rowToReview: () => rowToReview,
@@ -945,17 +953,17 @@ var JhapiCore = (() => {
 
   // src/core/deposits.ts
   var PERIODS = { monthly: 12, quarterly: 4, "half-yearly": 2, yearly: 1 };
-  function grow(principal, ratePct, compounding, days) {
+  function grow(principal, ratePct, compounding, days2) {
     const n = PERIODS[compounding];
-    return principal * Math.pow(1 + ratePct / 100 / n, n * days / 365);
+    return principal * Math.pow(1 + ratePct / 100 / n, n * days2 / 365);
   }
   function depositValue(input, asOf) {
     const { principalPaise: p, ratePct, compounding, start, maturity } = input;
     if (input.payout) return { valuePaise: p, maturityValuePaise: p, matured: asOf >= maturity };
     const until = minDate(asOf, maturity);
-    const days = Math.max(0, daysBetween(start, until));
+    const days2 = Math.max(0, daysBetween(start, until));
     return {
-      valuePaise: Math.round(grow(p, ratePct, compounding, days)),
+      valuePaise: Math.round(grow(p, ratePct, compounding, days2)),
       maturityValuePaise: Math.round(grow(p, ratePct, compounding, daysBetween(start, maturity))),
       matured: asOf >= maturity
     };
@@ -1070,10 +1078,10 @@ var JhapiCore = (() => {
   }
 
   // src/core/market.ts
-  function marketValue(units, pricePaise) {
+  function marketValue(units2, pricePaise) {
     var _a;
-    const m = /^(\d+)(?:\.(\d{1,6}))?$/.exec(units.trim());
-    if (!m) throw new Error(`Bad units: ${units}`);
+    const m = /^(\d+)(?:\.(\d{1,6}))?$/.exec(units2.trim());
+    if (!m) throw new Error(`Bad units: ${units2}`);
     const frac = ((_a = m[2]) != null ? _a : "").padEnd(6, "0");
     const MICRO = BigInt(1e6);
     const micro = BigInt(m[1]) * MICRO + BigInt(frac);
@@ -1464,12 +1472,14 @@ var JhapiCore = (() => {
     "Months",
     "Notes",
     "Updated",
-    "Deleted"
+    "Deleted",
+    // Added later, so last: older sheets gain the column.
+    "Units date"
   ];
-  TEXT_COLUMNS[HOLDINGS_TAB] = ["ID", "Code", "Units", "Price date", "Value date", "Start", "Maturity", "Updated"];
+  TEXT_COLUMNS[HOLDINGS_TAB] = ["ID", "Code", "Units", "Price date", "Value date", "Start", "Maturity", "Updated", "Units date"];
   var COMPOUNDING = ["monthly", "quarterly", "half-yearly", "yearly"];
   function holdingToRow(h) {
-    var _a, _b;
+    var _a, _b, _c;
     return [
       h.id,
       h.name,
@@ -1491,7 +1501,8 @@ var JhapiCore = (() => {
       (_b = h.tenureMonths) != null ? _b : "",
       h.notes,
       h.updatedAt,
-      h.deleted ? "TRUE" : ""
+      h.deleted ? "TRUE" : "",
+      (_c = h.unitsDate) != null ? _c : ""
     ];
   }
   function readHoldingType(c) {
@@ -1520,6 +1531,7 @@ var JhapiCore = (() => {
         institution: str(get("Institution")),
         code: str(get("Code")),
         units: str(get("Units")),
+        unitsDate: headers.includes("Units date") ? readDate(raw("Units date")) : "",
         pricePaise: paiseFrom(get("Price")),
         priceDate: readDate(raw("Price date")),
         investedPaise: paiseFrom(get("Invested")),
@@ -1617,6 +1629,188 @@ var JhapiCore = (() => {
     const showAs = str(get("Show as"));
     if (!name || !showAs) return null;
     return { id: str(get("ID")), name, showAs, updatedAt: str(get("Updated")), deleted: bool(get("Deleted")) };
+  }
+  var FUND_BUYS_TAB = "Fund buys";
+  var FUND_BUY_HEADERS = ["ID", "Date", "Fund", "Folio", "ISIN", "Units", "NAV", "Amount", "Source", "Holding ID", "Status", "Note", "Updated"];
+  TEXT_COLUMNS[FUND_BUYS_TAB] = ["ID", "Date", "Folio", "ISIN", "Units", "Holding ID", "Updated"];
+  function fundBuyToRow(b) {
+    return [b.id, b.date, b.fund, b.folio, b.isin, b.units, rupees(b.navPaise), rupees(b.amountPaise), b.source, b.holdingId, b.status, b.note, b.updatedAt];
+  }
+  var BUY_STATUSES = ["", "added", "duplicate", "in units already", "not matched"];
+  var BUY_SOURCES = ["coin", "kfintech", "cdsl"];
+  function rowToFundBuy(row, headers) {
+    const get = (h) => row[headers.indexOf(h)];
+    const id = str(get("ID"));
+    const date = readDate(row[headers.indexOf("Date")]);
+    const source = str(get("Source"));
+    const units2 = str(get("Units"));
+    if (!id || !date || !BUY_SOURCES.includes(source) || !/^-?\d+(\.\d+)?$/.test(units2)) return null;
+    const status = str(get("Status"));
+    return {
+      id,
+      date,
+      fund: str(get("Fund")),
+      folio: str(get("Folio")),
+      isin: str(get("ISIN")),
+      units: units2,
+      navPaise: paiseFrom(get("NAV")),
+      amountPaise: paiseFrom(get("Amount")),
+      source,
+      holdingId: str(get("Holding ID")),
+      status: BUY_STATUSES.includes(status) ? status : "",
+      note: str(get("Note")),
+      updatedAt: str(get("Updated"))
+    };
+  }
+
+  // src/core/fundBuys.ts
+  var FUND_SENDERS = [
+    { match: "noreply-coin@qmailer.zerodha.net", source: "coin", dkimDomain: "zerodha.net" },
+    { match: "@kfintech.com", source: "kfintech", dkimDomain: "kfintech.com" },
+    { match: "services@cdslindia.co.in", source: "cdsl", dkimDomain: "cdslindia.co.in" }
+  ];
+  function findFundSender(from) {
+    var _a;
+    const addr = senderAddress(from).toLowerCase();
+    return (_a = FUND_SENDERS.find((s) => s.match.startsWith("@") ? addr.endsWith(s.match) : addr === s.match)) != null ? _a : null;
+  }
+  function dayBefore(d) {
+    return new Date(Date.parse(d) - 864e5).toISOString().slice(0, 10);
+  }
+  var num2 = (s) => s.replace(/,/g, "");
+  var money = (s) => {
+    const n = Number(num2(s));
+    return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
+  };
+  var units = (s) => {
+    const t = num2(s);
+    return /^\d+(\.\d+)?$/.test(t) ? t.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "") : "";
+  };
+  function coin(text, subject, receivedAt) {
+    var _a, _b, _c;
+    const date = dayBefore((_c = looseDate((_b = (_a = /Allotment report\s*-\s*(\d{2}-\d{2}-\d{4})/i.exec(subject)) == null ? void 0 : _a[1]) != null ? _b : "")) != null ? _c : receivedAt.slice(0, 10));
+    const start = text.search(/Allotment success/i);
+    if (start < 0) return [];
+    let section = text.slice(start + "Allotment success".length);
+    const end = section.search(/Allotment fail|Redemption|Best,|Team Zerodha/i);
+    if (end >= 0) section = section.slice(0, end);
+    section = section.replace(/\|/g, " ").replace(/-{3,}/g, " ").replace(/\s+/g, " ");
+    const out = [];
+    for (const chunk of section.split(/\bunits\b/i)) {
+      const m = /^(.*?)\s*Folio no\.?\s*:?\s*([0-9A-Z/]+)\s*,?\s*NAV\s*:?\s*₹?\s*([\d,.]+)\s*(?:Stamp Duty\s*:?\s*₹?\s*[\d,.]+)?\s*₹?\s*([\d,]+\.\d+)\s+([\d,]+\.\d+)\s*$/i.exec(chunk.trim());
+      if (!m) continue;
+      const fund = m[1].replace(/^.*\bFund\s+Amount\b/i, "").trim();
+      const u = units(m[5]);
+      if (!fund || !u) continue;
+      out.push({ date, fund, folio: m[2], isin: "", units: u, navPaise: money(m[3]), amountPaise: money(m[4]), source: "coin" });
+    }
+    return out;
+  }
+  function kfintech(text, subject) {
+    var _a, _b;
+    if (!/Purchase Confirmation/i.test(subject)) return [];
+    const t = text.replace(/\|/g, " ").replace(/\s+/g, " ");
+    const m = /purchase request for Rs\.?\s*([\d,]+\.?\d*)\s+in\s+(.+?)\.\s*Accordingly\s+([\d,]+\.\d+)\s+units have been allotted as per applicable NAV of\s+(\d{1,2}[/-]\d{1,2}[/-]\d{4})\s+for Rs\.?\s*([\d,.]+)/i.exec(t);
+    if (!m) return [];
+    const date = looseDate(m[4]);
+    const u = units(m[3]);
+    if (!date || !u) return [];
+    const folio = (_b = (_a = /Purchase Confirmation\s*-\s*([0-9A-Z/]+)\s*$/i.exec(subject.trim())) == null ? void 0 : _a[1]) != null ? _b : "";
+    return [{ date, fund: m[2].trim(), folio, isin: "", units: u, navPaise: money(m[5]), amountPaise: money(m[1]), source: "kfintech" }];
+  }
+  function cdsl(text, subject) {
+    if (!/Transactions In Your Demat Account/i.test(subject)) return [];
+    const t = text.replace(/\|/g, " ").replace(/\s+/g, " ");
+    const out = [];
+    for (const m of t.matchAll(/(?:\b\d+\s+)?([^]*?)\s*\b(INF[A-Z0-9]{8}\d)\s+([\d,]+(?:\.\d+)?)\s+(Credit|Debit)\s+(\d{2}\/\d{2}\/\d{4})/gi)) {
+      const u = units(m[3]);
+      const date = looseDate(m[5]);
+      if (!u || !date || Number(u) === 0) continue;
+      const fund = m[1].split("#").pop().replace(/^.*Date and Time\s*/i, "").replace(/^\d+\s+/, "").trim();
+      out.push({ date: dayBefore(date), fund, folio: "", isin: m[2], units: /debit/i.test(m[4]) ? `-${u}` : u, navPaise: null, amountPaise: null, source: "cdsl" });
+    }
+    return out;
+  }
+  function parseFundEmail(email) {
+    const sender = findFundSender(email.from);
+    if (!sender) return [];
+    const text = flatten(email.text);
+    if (sender.source === "coin") return coin(text, email.subject, email.receivedAt);
+    if (sender.source === "kfintech") return kfintech(text, email.subject);
+    return cdsl(text, email.subject);
+  }
+  function addSigned(a, b) {
+    const parts = [a || "0", b || "0"].map((x) => {
+      const neg2 = x.startsWith("-");
+      const [i, f = ""] = x.replace(/^[-+]/, "").split(".");
+      return { neg: neg2, i, f };
+    });
+    const scale = Math.max(...parts.map((p) => p.f.length));
+    const sum = parts.reduce((s, p) => s + (p.neg ? BigInt(-1) : BigInt(1)) * BigInt(p.i + p.f.padEnd(scale, "0")), BigInt(0));
+    const neg = sum < BigInt(0);
+    const digits = (neg ? -sum : sum).toString().padStart(scale + 1, "0");
+    let out = scale ? `${digits.slice(0, -scale)}.${digits.slice(-scale)}`.replace(/\.?0+$/, "") : digits;
+    if (out === "") out = "0";
+    return neg && out !== "0" ? `-${out}` : out;
+  }
+  var NOISE = /* @__PURE__ */ new Set(["plan", "option", "the", "scheme", "mutual", "mf"]);
+  function fundKey(name) {
+    return name.toLowerCase().replace(/&/g, " and ").split(/[^a-z0-9]+/).filter((w) => w && !NOISE.has(w)).join(" ");
+  }
+  function matchBuy(b, holdings) {
+    const funds = holdings.filter((h) => !h.deleted && (h.type === "mf" || h.type === "etf"));
+    const one = (hs) => hs.length === 1 ? hs[0] : null;
+    if (b.isin) {
+      const hit = one(funds.filter((h) => h.code.trim().toUpperCase() === b.isin));
+      if (hit) return hit;
+    }
+    if (b.folio) {
+      const folio = b.folio.split("/")[0];
+      const re = new RegExp(String.raw`(^|[^0-9])${folio}([^0-9]|$)`);
+      const hit = one(funds.filter((h) => /folio/i.test(h.notes) && re.test(h.notes)));
+      if (hit) return hit;
+    }
+    const key = fundKey(b.fund);
+    return key ? one(funds.filter((h) => fundKey(h.name) === key)) : null;
+  }
+  var days = (a, b) => Math.abs(Date.parse(a) - Date.parse(b)) / 864e5;
+  function applyBuys(buys, holdings, now) {
+    var _a;
+    const hs = new Map(holdings.map((h) => [h.id, { ...h }]));
+    const changed = /* @__PURE__ */ new Set();
+    const out = buys.map((b) => ({ ...b }));
+    const order = out.map((b, i) => ({ b, i })).filter(({ b }) => b.status === "" || b.status === "not matched").sort((x, y) => x.b.date.localeCompare(y.b.date) || ["coin", "kfintech", "cdsl"].indexOf(x.b.source) - ["coin", "kfintech", "cdsl"].indexOf(y.b.source) || x.i - y.i);
+    for (const { b } of order) {
+      const twin = out.find((o) => o !== b && o.status === "added" && o.units === b.units && days(o.date, b.date) <= 4);
+      if (twin) {
+        Object.assign(b, { status: "duplicate", holdingId: twin.holdingId, note: `same as the ${twin.source} email`, updatedAt: now });
+        continue;
+      }
+      const h = matchBuy(b, [...hs.values()]);
+      if (!h) {
+        if (b.status !== "not matched") Object.assign(b, { status: "not matched", note: "no fund with this ISIN, folio or name", updatedAt: now });
+        continue;
+      }
+      if (h.unitsDate && b.date <= h.unitsDate) {
+        Object.assign(b, { status: "in units already", holdingId: h.id, note: `units were set on ${h.unitsDate}`, updatedAt: now });
+        continue;
+      }
+      if (!/^\d+(\.\d+)?$/.test(h.units.trim())) {
+        Object.assign(b, { status: "not matched", holdingId: h.id, note: "the fund has no units yet; enter them or import a CAS", updatedAt: now });
+        continue;
+      }
+      const next = addSigned(h.units.trim(), b.units);
+      if (next.startsWith("-")) {
+        Object.assign(b, { status: "not matched", holdingId: h.id, note: "more units sold than the fund holds", updatedAt: now });
+        continue;
+      }
+      h.units = next;
+      if (b.amountPaise && !b.units.startsWith("-")) h.investedPaise = ((_a = h.investedPaise) != null ? _a : 0) + b.amountPaise;
+      h.updatedAt = now;
+      changed.add(h.id);
+      Object.assign(b, { status: "added", holdingId: h.id, note: "", updatedAt: now });
+    }
+    return { buys: out, changed: [...changed].map((id) => hs.get(id)) };
   }
 
   // src/core/prices.ts
@@ -1737,6 +1931,7 @@ var TABS = [
   { name: J.HOLDINGS_TAB, headers: J.HOLDING_HEADERS },
   { name: J.NETWORTH_TAB, headers: J.NETWORTH_HEADERS },
   { name: J.GOALS_TAB, headers: J.GOAL_HEADERS },
+  { name: J.FUND_BUYS_TAB, headers: J.FUND_BUY_HEADERS },
   { name: J.LOG_TAB, headers: ['Time', 'Event'] },
 ];
 
@@ -1907,7 +2102,14 @@ function writeRows_(sheet, tabName, headers, startRow, rows) {
     var col = headers.indexOf(h);
     if (col >= 0) sheet.getRange(startRow, col + 1, rows.length, 1).setNumberFormat('@');
   });
-  sheet.getRange(startRow, 1, rows.length, headers.length).setValues(rows);
+  // A tab still on an older layout has fewer columns than the record: write only the columns it has.
+  var width = headers.length;
+  var fitted = rows.map(function (r) {
+    var out = r.slice(0, width);
+    while (out.length < width) out.push('');
+    return out;
+  });
+  sheet.getRange(startRow, 1, rows.length, width).setValues(fitted);
 }
 
 function appendRows_(tabName, rows) {
@@ -2065,6 +2267,7 @@ function pull_() {
     holdings: loadHoldings_(t.problems).items.map(function (x) { return x.rec; }),
     netWorth: loadSnapshots_(),
     goals: loadGoals_(t.problems).items.map(function (x) { return x.rec; }),
+    fundBuys: recentFundBuys_(),
     problems: t.problems,
   };
 }
@@ -2116,6 +2319,8 @@ function validatePush_(body) {
     ['pricePaise', 'investedPaise', 'valuePaise', 'ratePct', 'monthlyPaise', 'tenureMonths'].forEach(function (k) {
       if (h[k] !== null && (typeof h[k] !== 'number' || !isFinite(h[k]) || Math.abs(h[k]) > 1e15)) throw new Error(where + 'bad ' + k + '.');
     });
+    // Older copies of the app send no unitsDate.
+    if (h.unitsDate !== undefined && h.unitsDate !== '' && !ISO_DATE.test(String(h.unitsDate))) throw new Error(where + 'bad unitsDate.');
   });
   rules.forEach(function (r, i) {
     var ok = r && typeof r.id === 'string' && r.id && r.id.length <= 100 &&
@@ -2201,6 +2406,7 @@ function push_(body) {
     var out = {};
     ['id', 'type', 'name', 'institution', 'code', 'units', 'pricePaise', 'priceDate', 'investedPaise', 'valuePaise', 'valueDate', 'ratePct',
       'startDate', 'maturityDate', 'compounding', 'payout', 'monthlyPaise', 'tenureMonths', 'notes', 'updatedAt', 'deleted'].forEach(function (k) { out[k] = h[k]; });
+    out.unitsDate = h.unitsDate || '';
     return out;
   });
   changed += mergeTable_(J.HOLDINGS_TAB, loadHoldings_(), cleanHoldings, J.holdingToRow, rejected);
@@ -2348,6 +2554,7 @@ function readInboxLocked_() {
   appendRows_(J.TXN_TAB, newTxns);
   appendRows_(J.STATEMENT_TAB, newStatements);
   appendRows_(J.REVIEW_TAB, newReview);
+  var funds = readFundEmails_(afterMs);
   props.setProperty(LAST_RUN_PROP, new Date(cursor).toISOString());
   var tidied = newTxns.length > 0 ? tidyRecent_() : 0;
   var added = newTxns.length + newStatements.length + newReview.length + tidied;
@@ -2359,7 +2566,91 @@ function readInboxLocked_() {
       (tidied ? ', ' + tidied + ' row(s) tagged as transfers or improved from receipts.' : '.')
     );
   }
-  return { ok: true, processed: processed, counts: counts };
+  return { ok: true, processed: processed, counts: counts, funds: funds };
+}
+
+// ---------- fund purchases from emails ----------
+
+/**
+ * Reads purchase emails (Zerodha Coin, KFintech, CDSL) into the Fund buys tab, then adds the waiting ones to
+ * their holdings' units (J.applyBuys). Each email is read once (by Gmail ID). Unmatched purchases are retried
+ * on every run, so a fund added later, or a CAS import, picks them up.
+ */
+function readFundEmails_(afterMs) {
+  var tab = readTab_(J.FUND_BUYS_TAB);
+  var known = {};
+  tab.rows.forEach(function (r) { known[String(r[0]).split('#')[0]] = true; });
+  var query = 'from:(' + J.FUND_SENDERS.map(function (s) { return s.match.charAt(0) === '@' ? s.match.slice(1) : s.match; }).join(' OR ') + ') after:' + Math.floor(afterMs / 1000);
+  var rows = [];
+  var blocked = [];
+  var stamp = nowIso_();
+  var threads = GmailApp.search(query, 0, 100);
+  threads.forEach(function (th) {
+    th.getMessages().forEach(function (m) {
+      var emailId = m.getId();
+      if (known[emailId] || m.getDate().getTime() < afterMs) return;
+      known[emailId] = true;
+      var from = m.getFrom();
+      var sender = J.findFundSender(from);
+      if (!sender) return;
+      var verdict = J.checkSender(m.getRawContent(), from, sender.dkimDomain);
+      if (!verdict.ok) { blocked.push(reviewRow_(m, emailId, from, 'blocked', verdict.reason, stamp)); return; }
+      var text = m.getPlainBody() || stripHtml_(m.getBody());
+      J.parseFundEmail({ from: from, subject: m.getSubject(), receivedAt: m.getDate().toISOString(), text: text }).forEach(function (b, i) {
+        rows.push(J.fundBuyToRow({
+          id: emailId + '#' + i, date: b.date, fund: b.fund, folio: b.folio, isin: b.isin, units: b.units, navPaise: b.navPaise,
+          amountPaise: b.amountPaise, source: b.source, holdingId: '', status: '', note: '', updatedAt: stamp,
+        }));
+      });
+    });
+  });
+  appendRows_(J.FUND_BUYS_TAB, rows);
+  appendRows_(J.REVIEW_TAB, blocked);
+  var applied = applyFundBuys_();
+  if (rows.length > 0 || applied > 0) {
+    if (applied > 0) bumpVersion_();
+    log_('Fund emails: ' + rows.length + ' purchase line(s) read, ' + applied + ' added to holdings.');
+  }
+  return { read: rows.length, added: applied };
+}
+
+/** Adds waiting purchases to holdings. Returns how many were added. */
+function applyFundBuys_() {
+  var tab = readTab_(J.FUND_BUYS_TAB);
+  var buys = [];
+  var at = [];
+  tab.rows.forEach(function (r, i) {
+    var b = J.rowToFundBuy(r, tab.headers);
+    if (b) { buys.push(b); at.push(i + 2); }
+  });
+  if (!buys.some(function (b) { return b.status === '' || b.status === 'not matched'; })) return 0;
+  var state = loadHoldings_();
+  var result = J.applyBuys(buys, state.items.map(function (x) { return x.rec; }), nowIso_());
+  var rowOf = {};
+  state.items.forEach(function (x) { rowOf[x.rec.id] = x.row; });
+  result.changed.forEach(function (h) {
+    writeRows_(state.tab.sheet, J.HOLDINGS_TAB, state.tab.headers, rowOf[h.id], [J.holdingToRow(h)]);
+  });
+  var added = 0;
+  result.buys.forEach(function (b, i) {
+    if (b.status === buys[i].status && b.note === buys[i].note) return;
+    if (b.status === 'added') added++;
+    writeRows_(tab.sheet, J.FUND_BUYS_TAB, tab.headers, at[i], [J.fundBuyToRow(b)]);
+  });
+  return added;
+}
+
+/** The latest purchases, for the app (read-only): the last 90 days, newest first. */
+function recentFundBuys_() {
+  var tab = readTab_(J.FUND_BUYS_TAB);
+  var cutoff = new Date(nowMs_() - 90 * 86400000).toISOString().slice(0, 10);
+  var out = [];
+  tab.rows.forEach(function (r) {
+    var b = J.rowToFundBuy(r, tab.headers);
+    if (b && b.date >= cutoff) out.push(b);
+  });
+  out.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
+  return out.slice(0, 200);
 }
 
 /**

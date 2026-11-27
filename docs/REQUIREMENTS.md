@@ -84,7 +84,9 @@ Every requirement starts as **Planned**. The milestone column refers to the buil
 | E4 | PPF, NSC, SCSS, KVP, PO MIS, Sukanya Samriddhi, FD and RD values are calculated from their rates and dates | M1, M5a | Auto (calculations and valuation tests); shown on Portfolio |
 | E5 | Loans show outstanding principal, EMI, rate, EMIs left, interest paid, and handle rate changes and prepayments | M1, M5a | Outstanding and EMIs left shown on Portfolio (Auto). Rate changes and prepayments: calculated (Auto), entry screen planned |
 | E6 | Stocks, ETFs and SGBs are valued from daily prices; mutual funds from daily NAVs | M5b | Auto (script on fake AMFI and GOOGLEFINANCE); Open for the first real morning run |
-| E7 | EMI and contribution emails update the matching loan or holding | M5 | Planned |
+| E7 | EMI and contribution emails update the matching loan or holding | M5 | Partly: fund purchases done (E9); EPF, NPS, PPF planned (E10) |
+| E9 | Fund purchases and demat fund credits/debits from Zerodha Coin, KFintech and CDSL emails are added to the matching fund's units once, so its goals move; ones with no fund wait and are shown | M6c | Auto (parsers on the three layouts, duplicates, CAS boundary, round trip); checked on the owner's real emails locally; Open for the first live run |
+| E10 | EPF, NPS and PPF contributions are added as they happen (PPF deposits from bank transfers, NPS contribution emails and NAVs, EPF passbook import) | M5d | Planned (DESIGN 7.1) |
 | E8 | The owner can import a CAS statement PDF for mutual funds and demat holdings; after that, fund values update every morning without another import | M8b | Auto (encrypted PDF through pdf.js, both layouts, import into the sheet, morning prices by ISIN); Open for the owner's own CAS |
 
 ### F. Net worth
@@ -105,6 +107,7 @@ Every requirement starts as **Planned**. The milestone column refers to the buil
 | G4 | Each goal shows a forecast band (10th to 90th percentile and median, in today's rupees) and the chance of reaching it | M6 | Auto (forecast matches plain compounding at zero volatility; repeatable; more SIP → higher chance) |
 | G6 | A goal counts the ongoing SIPs of the holdings set aside for it (by the same share), plus its own SIP | M6b | Auto (goal view test; round trip) |
 | G7 | Each goal has a yearly SIP top-up %, 10% unless changed (also for goals made before), used in SIP needed and the forecast | M6b | Auto (step-up sums; default for older goals and sheets; round trip) |
+| G8 | One screen maps every holding to every goal by %, with "all of it to" and the unassigned share, and refuses more than 100% | M6c | Auto (screen test against the built script) |
 | G5 | Goals under 3 years away with equity tagged show a suggestion to move part to debt | M6 | Planned |
 
 ### H. AI Outlook

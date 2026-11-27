@@ -117,6 +117,8 @@ export default function HoldingEdit() {
     e.preventDefault()
     const b = build()
     if (typeof b === 'string') return setErr(b)
+    // Units typed by hand are the full count today: purchase emails up to today are already in them.
+    if (b.units && b.units !== existing?.units) b.unitsDate = today
     saveHolding(b)
     nav('/portfolio')
   }

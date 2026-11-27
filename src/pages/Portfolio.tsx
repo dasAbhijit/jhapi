@@ -12,6 +12,7 @@ export default function Portfolio() {
   if (!config) return <NotConnected />
   const today = todayIST()
   const s = summarise(data?.holdings ?? [], today)
+  const waiting = (data?.fundBuys ?? []).filter((b) => b.status === 'not matched').length
 
   return (
     <div className="page">
@@ -24,6 +25,11 @@ export default function Portfolio() {
         </span>
       </div>
       <SyncLine />
+      {waiting > 0 && (
+        <Link className="banner warn tap" to="/goals/funds">
+          {waiting} fund purchase{waiting === 1 ? '' : 's'} from emails not added to a holding yet. See which ›
+        </Link>
+      )}
       <header className="hero">
         <span className="hero-label">Net worth from holdings</span>
         <span className="hero-value">{formatRupees(s.netPaise)}</span>

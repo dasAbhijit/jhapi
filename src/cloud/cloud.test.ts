@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { checkSender } from '../core/dkim'
 import { REVIEW_TAB, RULES_TAB, STATEMENT_TAB, TXN_HEADERS, TXN_TAB } from '../core/sheetRows'
+import { CDSL, COIN, KFIN } from '../core/fundBuys.fixture'
 import { makeEnv, passAuth, type FakeMessage } from './fakeGoogle'
 
 const col = (h: string) => (TXN_HEADERS as readonly string[]).indexOf(h)
@@ -30,7 +31,7 @@ describe('setup', () => {
   it('creates the tabs, a long secret code and one 10-minute trigger', () => {
     const { env, token } = ready()
     expect(token).toMatch(/^[0-9a-f]{64}$/)
-    expect(Object.keys(env.sheets).sort()).toEqual(['Goals', 'Holdings', 'Log', 'Names', 'Net worth', 'Review', 'Rules', 'Statements', 'Transactions'])
+    expect(Object.keys(env.sheets).sort()).toEqual(['Fund buys', 'Goals', 'Holdings', 'Log', 'Names', 'Net worth', 'Review', 'Rules', 'Statements', 'Transactions'])
     expect(env.tab(TXN_TAB)[0]).toEqual([...TXN_HEADERS])
     expect(env.sheets[TXN_TAB].frozen).toBe(1)
     env.fn('setup')()
@@ -275,7 +276,8 @@ describe('holdings sync', () => {
     const { env, token } = ready()
     let r = env.call({ token, action: 'push', holdings: [ppf] })
     expect(r.ok).toBe(true)
-    expect(r.holdings).toEqual([ppf])
+    // An older copy of the app sends no unitsDate: it is stored empty.
+    expect(r.holdings).toEqual([{ ...ppf, unitsDate: '' }])
     const row = env.tab('Holdings')[1]
     expect(row.slice(0, 3)).toEqual(['h1', 'PPF · SBI', 'PPF'])
     expect(row[8]).toBe(615000) // Invested in rupees
@@ -386,5 +388,52 @@ describe('goals sync', () => {
     const { env, token } = ready()
     expect(env.call({ token, action: 'push', goals: [{ ...g, tags: [{ holdingId: 'h1', pct: 120 }] }] }).error).toBe('Goal 1: bad holding share.')
     expect(env.call({ token, action: 'push', goals: [{ ...g, tags: [{ holdingId: 'a:b', pct: 10 }] }] }).error).toBe('Goal 1: bad holding share.')
+  })
+})
+
+describe('fund purchases from emails', () => {
+  const holding = (p: Record<string, unknown>) => ({
+    id: 'h', type: 'mf', name: 'Fund', institution: '', code: '', units: '', unitsDate: '', pricePaise: null, priceDate: '', investedPaise: null,
+    valuePaise: null, valueDate: '', ratePct: null, startDate: '', maturityDate: '', compounding: '', payout: false, monthlyPaise: null,
+    tenureMonths: null, notes: '', updatedAt: '2026-11-01T09:00:00.000Z', deleted: false, ...p,
+  })
+  const mail = (id: string, e: { from: string; subject: string; receivedAt: string; text: string }, domain: string, auth?: string) =>
+    ({ id, from: e.from, subject: e.subject, date: e.receivedAt, body: e.text, auth: auth ?? passAuth(domain) })
+
+  it('adds each purchase to its fund once, keeps unmatched ones waiting, and gives the app the list', () => {
+    const { env, token } = ready()
+    env.call({
+      token, action: 'push', holdings: [
+        holding({ id: 'value', name: 'Example Value Index Fund - Direct Plan - Growth', code: 'INF000X01011', units: '100', investedPaise: 300000, notes: 'Folio 910000000001 · from CAS' }),
+        holding({ id: 'liquid', name: 'Sample Liquid Fund', code: 'INF000Y02022', units: '20' }),
+      ],
+    })
+    env.messages.push(
+      mail('c1', COIN, 'zerodha.net'),
+      mail('k1', KFIN, 'kfintech.com'),
+      mail('d1', CDSL, 'cdslindia.co.in'),
+      // Spoofed: CDSL's From, no CDSL signature.
+      mail('d2', { ...CDSL, receivedAt: '2026-11-06T10:00:00Z', text: CDSL.text.replace('528.591', '999.000') }, 'cdslindia.co.in', 'mx.google.com; dkim=fail header.i=@cdslindia.co.in'),
+    )
+    const r = env.fn('readInbox')() as { funds: { read: number; added: number } }
+    expect(r.funds).toEqual({ read: 5, added: 2 })
+
+    const p = env.call({ token, action: 'pull' })
+    const units = Object.fromEntries(p.holdings.map((h: { id: string; units: string }) => [h.id, h.units]))
+    expect(units).toEqual({ value: '628.591', liquid: '9.5' })
+    expect(p.holdings.find((h: { id: string }) => h.id === 'value').investedPaise).toBe(300000 + 1_399_930)
+    const status = (src: string, u: string) => p.fundBuys.find((b: { source: string; units: string }) => b.source === src && b.units === u)?.status
+    expect(status('coin', '528.591')).toBe('added')
+    expect(status('kfintech', '528.591')).toBe('duplicate')
+    expect(status('cdsl', '528.591')).toBe('duplicate')
+    expect(status('cdsl', '-10.5')).toBe('added')
+    expect(status('coin', '118.713')).toBe('not matched') // no contra fund in Jhapi yet
+    expect(p.review.some((x: { emailId: string; status: string }) => x.emailId === 'd2' && x.status === 'blocked')).toBe(true)
+
+    // Add the contra fund; the next run picks the waiting purchase up. Emails are not read twice.
+    env.call({ token, action: 'push', holdings: [holding({ id: 'contra', name: 'Sample Contra Fund - Direct Plan - Growth', units: '50', updatedAt: '2026-11-17T09:00:00.000Z' })] })
+    expect((env.fn('readInbox')() as { funds: unknown }).funds).toEqual({ read: 0, added: 1 })
+    expect(env.call({ token, action: 'pull' }).holdings.find((h: { id: string }) => h.id === 'contra').units).toBe('168.713')
+    expect(env.tab('Fund buys')).toHaveLength(6)
   })
 })

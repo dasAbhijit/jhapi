@@ -166,6 +166,13 @@ Amounts are **rupees** in the sheet and integer **paise** in the app. Dates are 
   - A fixed random seed makes the picture the same on every device.
 - A holding set aside more than 100% across goals is flagged.
 
+**Fund buys** (written by the script, read-only in the app; M6c): `ID` (Gmail ID#line), `Date` (the NAV day), `Fund`, `Folio`, `ISIN`, `Units` (negative for a sale), `NAV`, `Amount`, `Source` (coin, kfintech, cdsl), `Holding ID`, `Status`, `Note`, `Updated`. Holdings also gained `Units date` (last column): the day the units were last set in full by a CAS import or a hand edit.
+
+- **Read** every inbox run from Zerodha Coin "Allotment report" (fund, folio, NAV, amount, units), KFintech "Purchase Confirmation" (amount, fund, units, NAV date; folio in the subject) and CDSL "Transactions In Your Demat Account" (fund ISIN, quantity, credit or debit; shares are left out). Senders are checked with DKIM like the banks; a failed check goes to Review as blocked. Coin and CDSL report the day after the NAV day, so their date is moved back a day and all three line up.
+- **Added once** (`src/core/fundBuys.ts`, `applyBuys`): the same units within 4 days is the same purchase from another email (`duplicate`). The purchase is matched to a fund by ISIN, then by the folio in the holding's notes (the CAS import writes it), then by name with words such as "plan" and "option" ignored; a tie is no match. A purchase on or before the holding's `Units date` is already counted (`in units already`). Otherwise its units are added (a sale takes them off), and its amount is added to the cost.
+- **Waiting:** a purchase with no fund (or a fund without units) is `not matched` and tried again every run, so adding the fund or importing a CAS picks it up. Portfolio shows a banner while any are waiting.
+- **Goals move by themselves:** a goal counts a share of the fund's value, so new units move every goal the fund is set aside for.
+
 Outlooks (M7) will get their own tab in the same style.
 
 ## 7. Core logic (`src/core`)
@@ -189,6 +196,16 @@ Pure functions with no UI or network code, covered by unit and randomized tests,
 7. **Goals** (`goals.ts`): future cost = today's cost × (1 + inflation)^years. Money already set aside grows at the expected return. SIP needed assumes the SIP is invested at the start of each month, at the monthly rate equal to the yearly return ((1+R)^(1/12) − 1), and is rounded up to the next ₹100. With a yearly top-up s, month m (from 1) invests P × (1 + s)^⌊(m − 1)/12⌋ and the sum is added up month by month; the forecast tops up the same way. A holding can be split across goals by percentage; the parts must add up to 100% or less.
 8. **Forecast:** 1,000 runs of monthly returns per asset class (normal distribution from expected return and volatility), run in a Web Worker. Shows the median and the 10th to 90th percentile in today's rupees, and the chance of reaching the target. Fixed-rate assets and loans are calculated, not simulated.
 9. **Transactions:** transfer pairing, duplicate flagging, category rules, monthly spending totals.
+
+### 7.1 Plan: EPF, NPS and PPF contributions (M5d)
+
+Today these are valued from a balance, a rate and one monthly contribution typed by the owner (`savings.ts`, NPS by units × price). The aim is the same as for funds: set them up once, then let what arrives move them, and the goals with them (a share of a holding already brings the same share of its monthly contribution to a goal).
+
+1. **A Contributions tab** (`Holding ID`, `Date`, `Amount`, `Kind` (employee, employer, VPF, deposit, interest), `Source`, `Email ID`, `Updated`). The EPF/PPF/SSY engine already works from dated flows; it will use these rows instead of "the same amount every month" from the first dated row onwards, and fall back to the monthly amount for months with none. Typed by hand in the app or the sheet, or added from emails.
+2. **PPF (first, no new senders):** PPF deposits are bank transfers that Jhapi already reads. A transfer whose narration or payee names the PPF account (e.g. "PPF", the account's last digits, set on the holding) becomes a deposit on that PPF, once (by the transaction ID). The transaction is shown as a transfer to savings, not spending. "Reconcile with passbook" sets the true balance on a date; the yearly interest is then worked out from there.
+3. **NPS:** one holding per scheme (E, C, G, A; Tier I and II) with the PFM scheme code as its code. NAVs every morning from NPS Trust's daily NAV file, like AMFI. Contribution emails from the CRA (Protean or KFintech) add units per scheme, counted once like fund purchases. An NPS transaction statement (PDF, on the device) can be imported like a CAS to set units in full.
+4. **EPF:** EPFO does not reliably email credits. The plan is the member passbook PDF (downloaded from the EPFO portal), read on the device like a CAS: month-wise employee, employer and pension shares, and the yearly interest, written as contributions and a reconciled balance. The salary slip email, if one comes, can fill the months in between. EPS is shown but not counted, as today.
+5. **Needed first:** samples of a PPF deposit alert from the bank, an NPS contribution email, an NPS statement and an EPF passbook (kept in the git-ignored `samples/`), to build the readers on the real layouts.
 
 ## 8. AI with the owner's Gemini key (M7)
 
@@ -252,6 +269,7 @@ Built for **iPhone and iPad in Safari**. Phone layout uses the 390px design widt
 | Settings ✅ | Connect the sheet (web app URL and secret code), last sync and last email run, rows the sheet could not read, Sync now, Read bank emails now, category rules, **display names** (each with Remove), Disconnect this device |
 | Portfolio ✅ | Net worth from holdings, then each class (Retirement, Market, Deposits, Gold & other, Liabilities) with its total; each holding shows how its value was found (CALC, PRICE, EMI, MANUAL) and what is missing; Update prices now |
 | Add / edit holding ✅ | Type picker grouped by class, then only the fields that type needs, with a live "value today" preview |
+| Funds & goals ✅ | Purchases from emails (added or waiting, with the reason); each goal with what is set aside, its SIP and chance, live; then each holding with a % box per goal, "All of it to…", and what is not set aside; refuses more than 100%; saves all changed goals at once |
 | Goals ✅ | On track / behind counts and monthly SIP gap; a card per goal with cost today and in the target year, funded %, SIP needed vs SIP now (and its top-up), chance of reaching it; a warning when a holding is set aside more than 100% |
 | Goal detail ✅ | Name, cost, year, inflation, optional return; a share box for each holding, showing its SIP; the goal's other SIP; yearly top-up (10% by default); live cost in target year, set aside today, SIP now (from holdings + other, and what it reaches by the last year), SIP needed to start, forecast band and chance |
 | EPF, Loan, other holding detail (M5c) | Balance, breakdown, rates by year, events (prepayments, rate changes), the matching actions |
@@ -277,6 +295,8 @@ Re-planned on 17 Nov 2026 when the owner chose the Google Sheet as the store.
 | M5b ✅ | Prices every morning (AMFI NAVs by scheme code or ISIN; GOOGLEFINANCE by symbol, through a helper tab), daily net worth snapshots, Home chart with 1M/3M/6M/1Y/FY/All, Update prices now | Script tests on fake Google (AMFI file, GOOGLEFINANCE, AMFI down, same-day rerun) |
 | M5c | EPF/PPF/SSY declared rates by year; loan rate changes and prepayments entered in the app | Owner's EPF and loan match their statements |
 | M6b ✅ | Ongoing SIP on funds, stocks, ETFs and NPS (filled in by the CAS import from a SIP in the last 45 days); goals count tagged holdings' SIPs by share; yearly top-up % per goal (default 10%, older goals too) in SIP needed and the forecast | Tests: step-up sums by hand, tagged SIP shares, default for older goals, the Goals tab gaining the column, round trip with a 5% top-up |
+| M6c ✅ | Fund purchases from Coin, KFintech and CDSL emails added to the matching fund once (Fund buys tab, units date); Funds & goals screen; Portfolio banner for waiting purchases | Tests: the three email layouts (and flattened HTML), matching, duplicates across emails, CAS boundary, sales, waiting then added; round trip through the built script; the screen saves a 60/40 split and a whole fund. Checked against the owner's real emails locally |
+| M5d | EPF, NPS and PPF contributions (section 7.1) | Owner's PPF, NPS and EPF match their passbooks/statements |
 | M6 ✅ | Goals tab synced both ways; Goals and goal detail screens; holdings set aside by share; SIP needed; 1,000-run forecast band and chance; over-100% warning; goals on Home | Round trip: a goal with a 50% share of a fund lands in the sheet and shows BEHIND with its chance |
 | M7 | Gemini key in Settings; **Ask** (chat with lookups, "What Gemini saw", suggested changes); AI Outlook; Gemini fallback for unparsed emails | Tests with a fake Gemini pass (section 8.1); Ask answers "food this month vs last" correctly with a real key on the owner's iPhone |
 | M8a ✅ | Passkey lock: data on the device encrypted with a key from the passkey's PRF; lock screen; auto-lock; turn off; forget this device | Tests: nothing readable left in storage once on; lock, unlock, wrong passkey, 5-minute auto-lock, turn off, forget. Live check on the owner's iPhone and iPad |

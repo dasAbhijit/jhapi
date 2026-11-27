@@ -306,6 +306,7 @@ export function fundHolding(f: CasFund, base: Holding | null, newId: () => strin
     institution: h.institution || f.amc,
     code: f.isin,
     units: f.units,
+    unitsDate: f.navDate || h.unitsDate,
     pricePaise: newer ? h.pricePaise : f.navPaise,
     priceDate: newer ? h.priceDate : f.navDate,
     investedPaise: f.costPaise ?? h.investedPaise,

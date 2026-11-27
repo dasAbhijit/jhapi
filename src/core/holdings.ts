@@ -72,6 +72,8 @@ export interface Holding {
   code: string
   /** Units as a decimal string (MF units have 3 decimals). */
   units: string
+  /** The date the units were last set in full (a CAS import or a hand edit). Purchase emails up to this date are already in them. */
+  unitsDate: ISODate | ''
   pricePaise: Paise | null
   priceDate: ISODate | ''
   /** Money put in. For interest schemes: the balance on the start date. For loans: the amount borrowed. */
@@ -228,7 +230,7 @@ export function summarise(holdings: Holding[], today: ISODate): PortfolioSummary
 
 export function blankHolding(type: HoldingType, id: string): Holding {
   return {
-    id, type, name: HOLDING_TYPES[type].label, institution: '', code: '', units: '', pricePaise: null, priceDate: '', investedPaise: null,
+    id, type, name: HOLDING_TYPES[type].label, institution: '', code: '', units: '', unitsDate: '', pricePaise: null, priceDate: '', investedPaise: null,
     valuePaise: null, valueDate: '', ratePct: null, startDate: '', maturityDate: '', compounding: '', payout: false, monthlyPaise: null,
     tenureMonths: null, notes: '', updatedAt: '', deleted: false,
   }

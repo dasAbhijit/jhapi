@@ -5,6 +5,7 @@
  * Kept in localStorage: as plain JSON, or encrypted when the passkey lock is on (vault.ts, lock.tsx).
  * Every access is wrapped: Safari private browsing and cleared site data must not crash the app.
  */
+import type { FundBuy } from '../core/fundBuys'
 import type { Holding } from '../core/holdings'
 import type { Snapshot as NetWorthPoint } from '../core/networth'
 import type { Goal } from '../core/goalPlan'
@@ -24,6 +25,8 @@ export interface Snapshot {
   holdings: Holding[]
   netWorth: NetWorthPoint[]
   goals: Goal[]
+  /** Purchases from fund emails (last 90 days). Older snapshots have none. */
+  fundBuys?: FundBuy[]
   problems: string[]
 }
 

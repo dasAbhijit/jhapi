@@ -3,6 +3,7 @@
  * The body is sent as text/plain so the browser makes a simple request with no CORS preflight, which
  * Apps Script cannot answer; fetch then follows Google's redirect to the reply.
  */
+import type { FundBuy } from '../core/fundBuys'
 import type { Alias } from '../core/aliases'
 import type { Holding } from '../core/holdings'
 import type { Snapshot as NetWorthPoint } from '../core/networth'
@@ -26,6 +27,8 @@ export interface PullResult {
   holdings?: Holding[]
   netWorth?: NetWorthPoint[]
   goals?: Goal[]
+  /** Purchases read from fund emails in the last 90 days, newest first (read-only). */
+  fundBuys?: FundBuy[]
   problems: string[]
   rejected?: string[]
 }

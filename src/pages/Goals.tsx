@@ -21,7 +21,10 @@ export default function Goals() {
     <div className="page">
       <div className="title-row">
         <h1>Goals</h1>
-        <Link className="btn primary small" to="/goals/new">+ New goal</Link>
+        <span className="btn-row">
+          <Link className="btn small" to="/goals/funds">Funds &amp; goals</Link>
+          <Link className="btn primary small" to="/goals/new">+ New goal</Link>
+        </span>
       </div>
       <SyncLine />
       {views.length > 0 && (

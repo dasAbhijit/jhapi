@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { DEFAULT_TOP_UP_PCT, viewGoal, type Goal, type GoalTag } from '../core/goalPlan'
 import { sipInMonth } from '../core/goals'
 import { HOLDING_TYPES, valueHolding } from '../core/holdings'
@@ -84,7 +84,9 @@ export default function GoalEdit() {
 
       <section className="card flush">
         <div className="card-head"><h2>Set aside for this goal</h2></div>
-        <p className="muted small pad">A share of a holding brings the same share of its ongoing SIP. Set a fund's SIP on the fund (Invest), or import a CAS.</p>
+        <p className="muted small pad">
+          A share of a holding brings the same share of its ongoing SIP. Set a fund's SIP on the fund (Invest), or import a CAS. To map all funds to all goals at once, use <Link to="/goals/funds">Funds &amp; goals</Link>.
+        </p>
         {holdings.length === 0 ? (
           <p className="muted pad">Add holdings in Invest first, then set a share of each aside here.</p>
         ) : (

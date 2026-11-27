@@ -13,6 +13,7 @@ import { HOLDING_TYPES, type Holding, type HoldingType } from './holdings'
 import type { Snapshot as NetWorthSnapshot } from './networth'
 import { DEFAULT_TOP_UP_PCT, readTags, writeTags, type Goal } from './goalPlan'
 import type { Alias } from './aliases'
+import type { BuyStatus, FundBuy, FundSource } from './fundBuys'
 
 export type Cell = string | number | boolean | null
 
@@ -179,8 +180,10 @@ export const HOLDINGS_TAB = 'Holdings'
 export const HOLDING_HEADERS = [
   'ID', 'Name', 'Type', 'Institution', 'Code', 'Units', 'Price', 'Price date', 'Invested', 'Value', 'Value date', 'Rate %',
   'Start', 'Maturity', 'Compounding', 'Payout', 'Monthly', 'Months', 'Notes', 'Updated', 'Deleted',
+  // Added later, so last: older sheets gain the column.
+  'Units date',
 ] as const
-TEXT_COLUMNS[HOLDINGS_TAB] = ['ID', 'Code', 'Units', 'Price date', 'Value date', 'Start', 'Maturity', 'Updated']
+TEXT_COLUMNS[HOLDINGS_TAB] = ['ID', 'Code', 'Units', 'Price date', 'Value date', 'Start', 'Maturity', 'Updated', 'Units date']
 
 const COMPOUNDING = ['monthly', 'quarterly', 'half-yearly', 'yearly']
 
@@ -188,7 +191,7 @@ export function holdingToRow(h: Holding): Cell[] {
   return [
     h.id, h.name, HOLDING_TYPES[h.type].label, h.institution, h.code, h.units, rupees(h.pricePaise), h.priceDate, rupees(h.investedPaise),
     rupees(h.valuePaise), h.valueDate, h.ratePct ?? '', h.startDate, h.maturityDate, h.compounding, h.payout ? 'TRUE' : '',
-    rupees(h.monthlyPaise), h.tenureMonths ?? '', h.notes, h.updatedAt, h.deleted ? 'TRUE' : '',
+    rupees(h.monthlyPaise), h.tenureMonths ?? '', h.notes, h.updatedAt, h.deleted ? 'TRUE' : '', h.unitsDate ?? '',
   ]
 }
 
@@ -221,6 +224,7 @@ export function rowToHolding(row: (Cell | Date)[], headers: string[]): { holding
       institution: str(get('Institution')),
       code: str(get('Code')),
       units: str(get('Units')),
+      unitsDate: headers.includes('Units date') ? readDate(raw('Units date')) : '',
       pricePaise: paiseFrom(get('Price')),
       priceDate: readDate(raw('Price date')),
       investedPaise: paiseFrom(get('Invested')),
@@ -317,4 +321,32 @@ export function rowToAlias(row: Cell[], headers: string[]): Alias | null {
   const showAs = str(get('Show as'))
   if (!name || !showAs) return null
   return { id: str(get('ID')), name, showAs, updatedAt: str(get('Updated')), deleted: bool(get('Deleted')) }
+}
+
+// ---------- Fund buys tab (written by the script from purchase emails; read-only in the app) ----------
+
+export const FUND_BUYS_TAB = 'Fund buys'
+export const FUND_BUY_HEADERS = ['ID', 'Date', 'Fund', 'Folio', 'ISIN', 'Units', 'NAV', 'Amount', 'Source', 'Holding ID', 'Status', 'Note', 'Updated'] as const
+TEXT_COLUMNS[FUND_BUYS_TAB] = ['ID', 'Date', 'Folio', 'ISIN', 'Units', 'Holding ID', 'Updated']
+
+export function fundBuyToRow(b: FundBuy): Cell[] {
+  return [b.id, b.date, b.fund, b.folio, b.isin, b.units, rupees(b.navPaise), rupees(b.amountPaise), b.source, b.holdingId, b.status, b.note, b.updatedAt]
+}
+
+const BUY_STATUSES: BuyStatus[] = ['', 'added', 'duplicate', 'in units already', 'not matched']
+const BUY_SOURCES: FundSource[] = ['coin', 'kfintech', 'cdsl']
+
+export function rowToFundBuy(row: (Cell | Date)[], headers: string[]): FundBuy | null {
+  const get = (h: string) => row[headers.indexOf(h)] as Cell
+  const id = str(get('ID'))
+  const date = readDate(row[headers.indexOf('Date')])
+  const source = str(get('Source')) as FundSource
+  const units = str(get('Units'))
+  if (!id || !date || !BUY_SOURCES.includes(source) || !/^-?\d+(\.\d+)?$/.test(units)) return null
+  const status = str(get('Status')) as BuyStatus
+  return {
+    id, date: date as FundBuy['date'], fund: str(get('Fund')), folio: str(get('Folio')), isin: str(get('ISIN')), units,
+    navPaise: paiseFrom(get('NAV')), amountPaise: paiseFrom(get('Amount')), source, holdingId: str(get('Holding ID')),
+    status: BUY_STATUSES.includes(status) ? status : '', note: str(get('Note')), updatedAt: str(get('Updated')),
+  }
 }

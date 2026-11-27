@@ -31,6 +31,7 @@ function toSnapshot(r: PullResult): Snapshot {
     holdings: r.holdings ?? [],
     netWorth: r.netWorth ?? [],
     goals: r.goals ?? [],
+    fundBuys: r.fundBuys ?? [],
     problems: r.problems,
   }
 }
@@ -232,6 +233,17 @@ export function StoreProvider({ children, local = new LocalStore(), transport }:
     [local, sync],
   )
 
+  const saveGoals = useCallback(
+    (gs: Goal[]) => {
+      const now = new Date().toISOString()
+      const p = gs.reduce((acc, g) => queueGoal(acc, { ...g, updatedAt: now }), local.pending())
+      local.setPending(p)
+      setPending(p)
+      void sync()
+    },
+    [local, sync],
+  )
+
   const saveGoal = useCallback(
     (g: Goal) => {
       const p = queueGoal(local.pending(), { ...g, updatedAt: new Date().toISOString() })
@@ -280,6 +292,7 @@ export function StoreProvider({ children, local = new LocalStore(), transport }:
     saveRule,
     saveHolding,
     saveHoldings,
+    saveGoals,
     config,
     data,
     pendingCount: pending.transactions.length + pending.review.length + pending.rules.length + pending.names.length + pending.holdings.length + pending.goals.length,

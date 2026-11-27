@@ -137,6 +137,9 @@ h2 { margin: 0 0 10px; font-size: 16px; font-weight: 600; }
 @media (hover: hover) { .row.import:hover { background: none; } }
 .row.import .row-main { flex: 1; gap: 6px; }
 .row.import .row-title { white-space: normal; }
+.card-head h2.wrap { min-width: 0; overflow-wrap: anywhere; }
+.pad-x { margin: 0; padding: 0 16px 8px; }
+.input.quick { width: auto; max-width: 55%; flex: none; }
 .bulk-bar {
   position: sticky; bottom: calc(72px + env(safe-area-inset-bottom)); z-index: 2;
   display: flex; flex-direction: column; gap: 8px; padding: 12px;

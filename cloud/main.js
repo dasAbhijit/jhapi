@@ -41,6 +41,7 @@ var TABS = [
   { name: J.HOLDINGS_TAB, headers: J.HOLDING_HEADERS },
   { name: J.NETWORTH_TAB, headers: J.NETWORTH_HEADERS },
   { name: J.GOALS_TAB, headers: J.GOAL_HEADERS },
+  { name: J.FUND_BUYS_TAB, headers: J.FUND_BUY_HEADERS },
   { name: J.LOG_TAB, headers: ['Time', 'Event'] },
 ];
 
@@ -211,7 +212,14 @@ function writeRows_(sheet, tabName, headers, startRow, rows) {
     var col = headers.indexOf(h);
     if (col >= 0) sheet.getRange(startRow, col + 1, rows.length, 1).setNumberFormat('@');
   });
-  sheet.getRange(startRow, 1, rows.length, headers.length).setValues(rows);
+  // A tab still on an older layout has fewer columns than the record: write only the columns it has.
+  var width = headers.length;
+  var fitted = rows.map(function (r) {
+    var out = r.slice(0, width);
+    while (out.length < width) out.push('');
+    return out;
+  });
+  sheet.getRange(startRow, 1, rows.length, width).setValues(fitted);
 }
 
 function appendRows_(tabName, rows) {
@@ -369,6 +377,7 @@ function pull_() {
     holdings: loadHoldings_(t.problems).items.map(function (x) { return x.rec; }),
     netWorth: loadSnapshots_(),
     goals: loadGoals_(t.problems).items.map(function (x) { return x.rec; }),
+    fundBuys: recentFundBuys_(),
     problems: t.problems,
   };
 }
@@ -420,6 +429,8 @@ function validatePush_(body) {
     ['pricePaise', 'investedPaise', 'valuePaise', 'ratePct', 'monthlyPaise', 'tenureMonths'].forEach(function (k) {
       if (h[k] !== null && (typeof h[k] !== 'number' || !isFinite(h[k]) || Math.abs(h[k]) > 1e15)) throw new Error(where + 'bad ' + k + '.');
     });
+    // Older copies of the app send no unitsDate.
+    if (h.unitsDate !== undefined && h.unitsDate !== '' && !ISO_DATE.test(String(h.unitsDate))) throw new Error(where + 'bad unitsDate.');
   });
   rules.forEach(function (r, i) {
     var ok = r && typeof r.id === 'string' && r.id && r.id.length <= 100 &&
@@ -505,6 +516,7 @@ function push_(body) {
     var out = {};
     ['id', 'type', 'name', 'institution', 'code', 'units', 'pricePaise', 'priceDate', 'investedPaise', 'valuePaise', 'valueDate', 'ratePct',
       'startDate', 'maturityDate', 'compounding', 'payout', 'monthlyPaise', 'tenureMonths', 'notes', 'updatedAt', 'deleted'].forEach(function (k) { out[k] = h[k]; });
+    out.unitsDate = h.unitsDate || '';
     return out;
   });
   changed += mergeTable_(J.HOLDINGS_TAB, loadHoldings_(), cleanHoldings, J.holdingToRow, rejected);
@@ -652,6 +664,7 @@ function readInboxLocked_() {
   appendRows_(J.TXN_TAB, newTxns);
   appendRows_(J.STATEMENT_TAB, newStatements);
   appendRows_(J.REVIEW_TAB, newReview);
+  var funds = readFundEmails_(afterMs);
   props.setProperty(LAST_RUN_PROP, new Date(cursor).toISOString());
   var tidied = newTxns.length > 0 ? tidyRecent_() : 0;
   var added = newTxns.length + newStatements.length + newReview.length + tidied;
@@ -663,7 +676,91 @@ function readInboxLocked_() {
       (tidied ? ', ' + tidied + ' row(s) tagged as transfers or improved from receipts.' : '.')
     );
   }
-  return { ok: true, processed: processed, counts: counts };
+  return { ok: true, processed: processed, counts: counts, funds: funds };
+}
+
+// ---------- fund purchases from emails ----------
+
+/**
+ * Reads purchase emails (Zerodha Coin, KFintech, CDSL) into the Fund buys tab, then adds the waiting ones to
+ * their holdings' units (J.applyBuys). Each email is read once (by Gmail ID). Unmatched purchases are retried
+ * on every run, so a fund added later, or a CAS import, picks them up.
+ */
+function readFundEmails_(afterMs) {
+  var tab = readTab_(J.FUND_BUYS_TAB);
+  var known = {};
+  tab.rows.forEach(function (r) { known[String(r[0]).split('#')[0]] = true; });
+  var query = 'from:(' + J.FUND_SENDERS.map(function (s) { return s.match.charAt(0) === '@' ? s.match.slice(1) : s.match; }).join(' OR ') + ') after:' + Math.floor(afterMs / 1000);
+  var rows = [];
+  var blocked = [];
+  var stamp = nowIso_();
+  var threads = GmailApp.search(query, 0, 100);
+  threads.forEach(function (th) {
+    th.getMessages().forEach(function (m) {
+      var emailId = m.getId();
+      if (known[emailId] || m.getDate().getTime() < afterMs) return;
+      known[emailId] = true;
+      var from = m.getFrom();
+      var sender = J.findFundSender(from);
+      if (!sender) return;
+      var verdict = J.checkSender(m.getRawContent(), from, sender.dkimDomain);
+      if (!verdict.ok) { blocked.push(reviewRow_(m, emailId, from, 'blocked', verdict.reason, stamp)); return; }
+      var text = m.getPlainBody() || stripHtml_(m.getBody());
+      J.parseFundEmail({ from: from, subject: m.getSubject(), receivedAt: m.getDate().toISOString(), text: text }).forEach(function (b, i) {
+        rows.push(J.fundBuyToRow({
+          id: emailId + '#' + i, date: b.date, fund: b.fund, folio: b.folio, isin: b.isin, units: b.units, navPaise: b.navPaise,
+          amountPaise: b.amountPaise, source: b.source, holdingId: '', status: '', note: '', updatedAt: stamp,
+        }));
+      });
+    });
+  });
+  appendRows_(J.FUND_BUYS_TAB, rows);
+  appendRows_(J.REVIEW_TAB, blocked);
+  var applied = applyFundBuys_();
+  if (rows.length > 0 || applied > 0) {
+    if (applied > 0) bumpVersion_();
+    log_('Fund emails: ' + rows.length + ' purchase line(s) read, ' + applied + ' added to holdings.');
+  }
+  return { read: rows.length, added: applied };
+}
+
+/** Adds waiting purchases to holdings. Returns how many were added. */
+function applyFundBuys_() {
+  var tab = readTab_(J.FUND_BUYS_TAB);
+  var buys = [];
+  var at = [];
+  tab.rows.forEach(function (r, i) {
+    var b = J.rowToFundBuy(r, tab.headers);
+    if (b) { buys.push(b); at.push(i + 2); }
+  });
+  if (!buys.some(function (b) { return b.status === '' || b.status === 'not matched'; })) return 0;
+  var state = loadHoldings_();
+  var result = J.applyBuys(buys, state.items.map(function (x) { return x.rec; }), nowIso_());
+  var rowOf = {};
+  state.items.forEach(function (x) { rowOf[x.rec.id] = x.row; });
+  result.changed.forEach(function (h) {
+    writeRows_(state.tab.sheet, J.HOLDINGS_TAB, state.tab.headers, rowOf[h.id], [J.holdingToRow(h)]);
+  });
+  var added = 0;
+  result.buys.forEach(function (b, i) {
+    if (b.status === buys[i].status && b.note === buys[i].note) return;
+    if (b.status === 'added') added++;
+    writeRows_(tab.sheet, J.FUND_BUYS_TAB, tab.headers, at[i], [J.fundBuyToRow(b)]);
+  });
+  return added;
+}
+
+/** The latest purchases, for the app (read-only): the last 90 days, newest first. */
+function recentFundBuys_() {
+  var tab = readTab_(J.FUND_BUYS_TAB);
+  var cutoff = new Date(nowMs_() - 90 * 86400000).toISOString().slice(0, 10);
+  var out = [];
+  tab.rows.forEach(function (r) {
+    var b = J.rowToFundBuy(r, tab.headers);
+    if (b && b.date >= cutoff) out.push(b);
+  });
+  out.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
+  return out.slice(0, 200);
 }
 
 /**

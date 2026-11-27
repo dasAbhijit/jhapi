@@ -11,7 +11,9 @@ export {
   txnToRow, rowToTxn, reviewToRow, rowToReview, statementToRow, rowToStatement, ruleToRow, rowToRule,
   HOLDINGS_TAB, HOLDING_HEADERS, holdingToRow, rowToHolding, NETWORTH_TAB, NETWORTH_HEADERS, snapshotToRow, rowToSnapshot,
   GOALS_TAB, GOAL_HEADERS, goalToRow, rowToGoal, NAMES_TAB, NAME_HEADERS, aliasToRow, rowToAlias,
+  FUND_BUYS_TAB, FUND_BUY_HEADERS, fundBuyToRow, rowToFundBuy,
 } from '../core/sheetRows'
+export { FUND_SENDERS, findFundSender, parseFundEmail, applyBuys } from '../core/fundBuys'
 export { HOLDING_TYPES } from '../core/holdings'
 export { parseAmfiNav, priceKey, priceUpdates } from '../core/prices'
 export { netWorthSnapshot } from '../core/networth'
